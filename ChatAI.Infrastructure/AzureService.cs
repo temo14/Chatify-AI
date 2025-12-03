@@ -1,6 +1,10 @@
-﻿using ChatAI.Application.Interfaces;
+﻿using ChatAI.Application.Configuration;
+using ChatAI.Application.Exceptions;
+using ChatAI.Application.Interfaces;
 using ChatAI.Application.Models.AI;
 using ChatAI.Domain.Enums;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 using OpenAI.Embeddings;
 using DomainChatMessage = ChatAI.Domain.Entities.ChatMessage;
@@ -9,126 +13,132 @@ using OpenAIChatMessage = OpenAI.Chat.ChatMessage;
 namespace ChatAI.Infrastructure.AI;
 
 /// <summary>
-/// Azure OpenAI implementation of IAIClient
-/// Uses the official OpenAI .NET SDK with Azure endpoint
+/// Azure OpenAI client that gets tool definitions from ToolExecutor
 /// </summary>
 public class AzureOpenAIClient : IAIClient
 {
     private readonly ChatClient _chatClient;
     private readonly EmbeddingClient _embeddingClient;
+    private readonly IToolExecutor _toolExecutor;
+    private readonly ILogger<AzureOpenAIClient> _logger;
+    private readonly AzureOpenAIOptions _options;
 
-    public AzureOpenAIClient(ChatClient chatClient, EmbeddingClient embeddingClient)
+    public AzureOpenAIClient(
+        ChatClient chatClient,
+        EmbeddingClient embeddingClient,
+        IToolExecutor toolExecutor,
+        ILogger<AzureOpenAIClient> logger,
+        IOptions<AzureOpenAIOptions> options)
     {
-        _chatClient = chatClient;
-        _embeddingClient = embeddingClient;
+        _chatClient = chatClient ?? throw new ArgumentNullException(nameof(chatClient));
+        _embeddingClient = embeddingClient ?? throw new ArgumentNullException(nameof(embeddingClient));
+        _toolExecutor = toolExecutor ?? throw new ArgumentNullException(nameof(toolExecutor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+    }
+
+    public async Task<AIResponse> GenerateResponseAsync(List<DomainChatMessage> messages, bool allowTools = true)
+    {
+        if (messages == null || !messages.Any())
+        {
+            throw new ArgumentException("Messages cannot be null or empty", nameof(messages));
+        }
+
+        try
+        {
+            _logger.LogInformation("Generating AI response. Messages: {Count}, AllowTools: {AllowTools}", 
+                messages.Count, allowTools);
+
+            // Convert domain messages to OpenAI format
+            var openAIMessages = ConvertToOpenAIMessages(messages);
+
+            // Build options with tools if enabled
+            var options = BuildChatOptions(allowTools);
+
+            // Call Azure OpenAI
+            var response = await _chatClient.CompleteChatAsync(openAIMessages, options);
+
+            if (response?.Value == null)
+            {
+                throw new AIServiceException("Azure OpenAI returned null response");
+            }
+
+            var result = MapToAIResponse(response.Value, allowTools);
+
+            _logger.LogInformation("AI response generated. HasToolCall: {HasToolCall}, Model: {Model}", 
+                result.ToolCall != null, result.Model);
+
+            return result;
+        }
+        catch (Exception ex) when (ex is not AIServiceException)
+        {
+            _logger.LogError(ex, "Error calling Azure OpenAI");
+            throw new AIServiceException("Failed to generate AI response", ex);
+        }
     }
 
     /// <summary>
-    /// Generates AI response from conversation history
+    /// Build chat completion options with tools from ToolExecutor
     /// </summary>
-    public async Task<AIResponse> GenerateResponseAsync(List<DomainChatMessage> messages, bool allowTools = true)
+    private ChatCompletionOptions BuildChatOptions(bool allowTools)
     {
-        // STEP 1: Convert YOUR domain messages to OpenAI format
-        var openAIMessages = ConvertToOpenAIMessages(messages);
+        var options = new ChatCompletionOptions
+        {
+            MaxOutputTokenCount = _options.MaxTokens,
+            Temperature = (float)_options.Temperature
+        };
 
-        // STEP 2: Define what tools are available (if enabled)
-        ChatCompletionOptions? options = null;
         if (allowTools)
         {
-            options = new ChatCompletionOptions
+            // Get tool definitions from ToolExecutor (SINGLE SOURCE OF TRUTH)
+            var toolDefinitions = _toolExecutor.GetAllToolDefinitions();
+            
+            foreach (var toolDef in toolDefinitions)
             {
-                // YOU tell Azure OpenAI what tools exist!
-                Tools = { GetWeatherTool(), SearchWebTool() }
+                var chatTool = ChatTool.CreateFunctionTool(
+                    functionName: toolDef.Name,
+                    functionDescription: toolDef.Description,
+                    functionParameters: BinaryData.FromString(toolDef.ParametersJsonSchema)
+                );
                 
-                // You can add more tools here:
-                // Tools = { Tool1(), Tool2(), Tool3() }
-            };
+                options.Tools.Add(chatTool);
+            }
+            
+            _logger.LogDebug("Registered {Count} tools for AI", options.Tools.Count);
         }
 
-        // STEP 3: Call Azure OpenAI WITH the tool definitions
-        var response = await _chatClient.CompleteChatAsync(openAIMessages, options);
+        return options;
+    }
 
-        // STEP 4: Extract content from response
-        var content = response.Value?.Content?.FirstOrDefault()?.Text ?? string.Empty;
-
-        // STEP 5: Check if AI wants to call a tool
-        // Azure OpenAI will ONLY return toolCalls if:
-        // - You provided tools in step 2
-        // - The AI decided it needs one of those tools
-        var toolCalls = response.Value?.ToolCalls;
+    /// <summary>
+    /// Map OpenAI response to domain AIResponse
+    /// </summary>
+    private AIResponse MapToAIResponse(ChatCompletion completion, bool allowTools)
+    {
+        var content = completion.Content?.FirstOrDefault()?.Text ?? string.Empty;
         AIToolCall? toolCall = null;
 
-        if (toolCalls?.Any() == true && allowTools)
+        if (allowTools && completion.ToolCalls?.Any() == true)
         {
-            var firstToolCall = toolCalls.First();
+            var firstToolCall = completion.ToolCalls.First();
             toolCall = new AIToolCall
             {
-                Name = firstToolCall.FunctionName,     // e.g., "get_weather"
-                Arguments = firstToolCall.FunctionArguments.ToString(), // e.g., {"city": "London"}
+                Name = firstToolCall.FunctionName,
+                Arguments = firstToolCall.FunctionArguments.ToString(),
                 Id = firstToolCall.Id
             };
+
+            _logger.LogDebug("Tool call requested: {ToolName}", toolCall.Name);
         }
 
-        // STEP 6: Return structured response
         return new AIResponse
         {
             Content = content,
-            ToolCall = toolCall,  // Will be null if no tool needed
-            Model = response.Value?.Model ?? "unknown",
-            FinishReason = response.Value?.FinishReason.ToString()
+            ToolCall = toolCall,
+            Model = completion.Model ?? "unknown",
+            TokensUsed = completion.Usage?.TotalTokenCount,
+            FinishReason = completion.FinishReason.ToString()
         };
-    }
-
-    /// <summary>
-    /// EXAMPLE: Define a "get weather" tool
-    /// This tells Azure OpenAI: "You can call this function"
-    /// </summary>
-    private ChatTool GetWeatherTool()
-    {
-        return ChatTool.CreateFunctionTool(
-            functionName: "get_weather",
-            functionDescription: "Get the current weather for a specific city",
-            functionParameters: BinaryData.FromString("""
-            {
-                "type": "object",
-                "properties": {
-                    "city": {
-                        "type": "string",
-                        "description": "The city name, e.g., London, Paris"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "Temperature unit"
-                    }
-                },
-                "required": ["city"]
-            }
-            """)
-        );
-    }
-
-    /// <summary>
-    /// EXAMPLE: Define a "search web" tool
-    /// </summary>
-    private ChatTool SearchWebTool()
-    {
-        return ChatTool.CreateFunctionTool(
-            functionName: "search_web",
-            functionDescription: "Search the internet for information",
-            functionParameters: BinaryData.FromString("""
-            {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query"
-                    }
-                },
-                "required": ["query"]
-            }
-            """)
-        );
     }
 
     /// <summary>
@@ -161,7 +171,26 @@ public class AzureOpenAIClient : IAIClient
     /// </summary>
     public async Task<float[]> GenerateEmbeddingAsync(string input, CancellationToken ct = default)
     {
-        var response = await _embeddingClient.GenerateEmbeddingAsync(input, cancellationToken: ct);
-        return response.Value.ToFloats().ToArray();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            throw new ArgumentException("Input cannot be null or empty", nameof(input));
+        }
+
+        try
+        {
+            _logger.LogDebug("Generating embedding for input length: {Length}", input.Length);
+            
+            var response = await _embeddingClient.GenerateEmbeddingAsync(input, cancellationToken: ct);
+            var embedding = response.Value.ToFloats().ToArray();
+            
+            _logger.LogDebug("Embedding generated with {Dimensions} dimensions", embedding.Length);
+            
+            return embedding;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating embedding");
+            throw new AIServiceException("Failed to generate embedding", ex);
+        }
     }
 }
