@@ -7,7 +7,7 @@ services:
     container_name: chatify-sqlserver
     environment:
       - ACCEPT_EULA=Y
-      - MSSQL_SA_PASSWORD=YourStrong@Password123
+      - MSSQL_SA_PASSWORD=Password123
       - MSSQL_PID=Developer
     ports:
       - "1433:1433"
@@ -16,7 +16,7 @@ services:
     networks:
       - chatify-network
     healthcheck:
-      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourStrong@Password123 -Q "SELECT 1" -C || exit 1
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Password123 -Q "SELECT 1" -C || exit 1
       interval: 10s
       timeout: 3s
       retries: 10
@@ -31,7 +31,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:8080
-      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=ChatifyAI;User Id=sa;Password=YourStrong@Password123;TrustServerCertificate=True;
+      - ConnectionStrings__DefaultConnection=Server=sqlserver;Database=ChatifyAI;User Id=sa;Password=Password123;TrustServerCertificate=True;
       - AzureOpenAI__Endpoint=${AZURE_OPENAI_ENDPOINT}
       - AzureOpenAI__ApiKey=${AZURE_OPENAI_API_KEY}
       - AzureOpenAI__ChatDeploymentName=${AZURE_OPENAI_CHAT_DEPLOYMENT:-gpt-4}

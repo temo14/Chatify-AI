@@ -6,16 +6,12 @@ using ChatAI.Infrastructure.Data;
 using ChatAI.Infrastructure.Repositories;
 using ChatAI.Infrastructure.Tools;
 using Microsoft.EntityFrameworkCore;
-using OpenAI.Chat;
-using OpenAI.Embeddings;
+using Microsoft.OpenApi;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
 using ChatifyAIClient = ChatAI.Infrastructure.AI.AzureOpenAIClient;
 
 namespace ChatAI.Api.Extensions;
 
-/// <summary>
-/// Extension methods for configuring dependency injection services
-/// </summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>
@@ -31,7 +27,6 @@ public static class ServiceCollectionExtensions
             var connectionString = configuration.GetConnectionString("DefaultConnection");
             options.UseSqlServer(connectionString);
             
-            // Enable detailed logging only in development
             if (environment.IsDevelopment())
             {
                 options.EnableSensitiveDataLogging();
@@ -111,7 +106,39 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddSwaggerDocumentation(this IServiceCollection services)
     {
         services.AddEndpointsApiExplorer();
-        services.AddSwaggerGen();
+        services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new Microsoft.OpenApi.OpenApiInfo
+            {
+                Title = "Chatify AI API",
+                Version = "v1",
+                Description = "AI-powered chatbot with RAG, tool calling, and persistent conversations"
+            });
+
+            // Add API Key authentication to Swagger UI
+            c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme 
+            {
+                Name = "X-API-Key",
+                Type = SecuritySchemeType.ApiKey,
+                In = ParameterLocation.Header,
+                Description = "Enter your API key (e.g., demo-key-12345, test-key-67890, or admin-key-abcdef)",
+                Scheme = "ApiKeyScheme"
+            });
+
+            // Require API key for all endpoints
+            c.AddSecurityRequirement(doc =>
+            {
+                var securityRequirement = new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecuritySchemeReference("ApiKey", doc),
+                        new List<string>()
+                    }
+                };
+                return securityRequirement;
+            });
+        });
+        
         return services;
     }
 }

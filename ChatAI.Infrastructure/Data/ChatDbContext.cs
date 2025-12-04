@@ -1,30 +1,26 @@
 using ChatAI.Domain.Entities;
-using ChatAI.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatAI.Infrastructure.Data;
 
-/// <summary>
-/// Entity Framework DbContext for Chatify AI
-/// Manages all database operations and entity configurations
-/// </summary>
 public class ChatDbContext : DbContext
 {
     public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options)
     {
     }
-
-    // DbSets represent tables in the database
+    
     public DbSet<ChatSession> ChatSessions { get; set; } = null!;
+    
     public DbSet<ChatMessage> ChatMessages { get; set; } = null!;
+    
     public DbSet<UserMemory> UserMemories { get; set; } = null!;
+    
     public DbSet<KnowledgeDocument> KnowledgeDocuments { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
-        // ChatSession configuration
         modelBuilder.Entity<ChatSession>(entity =>
         {
             entity.ToTable("ChatSessions");
