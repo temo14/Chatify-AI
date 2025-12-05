@@ -36,8 +36,16 @@ namespace ChatAI.Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsToolCall")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("int");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -46,7 +54,8 @@ namespace ChatAI.Infrastructure.Migrations
 
                     b.Property<string>("SessionId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("datetime2");
@@ -61,8 +70,10 @@ namespace ChatAI.Infrastructure.Migrations
                     b.Property<string>("ToolResult")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<int?>("TotalTokens")
+                        .HasColumnType("int");
+
                     b.Property<string>("UserId")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -86,7 +97,8 @@ namespace ChatAI.Infrastructure.Migrations
             modelBuilder.Entity("ChatAI.Domain.Entities.ChatSession", b =>
                 {
                     b.Property<string>("Id")
-                        .HasColumnType("nvarchar(450)");
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -99,6 +111,9 @@ namespace ChatAI.Infrastructure.Migrations
                     b.Property<DateTime>("LastActivityAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("SessionMetadata")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Title")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
@@ -107,7 +122,6 @@ namespace ChatAI.Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("UserId")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
@@ -116,11 +130,14 @@ namespace ChatAI.Infrastructure.Migrations
                     b.HasIndex("CreatedAt")
                         .HasDatabaseName("IX_ChatSessions_CreatedAt");
 
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("IX_ChatSessions_IsActive");
+
+                    b.HasIndex("LastActivityAt")
+                        .HasDatabaseName("IX_ChatSessions_LastActivity");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("IX_ChatSessions_UserId");
-
-                    b.HasIndex("UserId", "IsActive")
-                        .HasDatabaseName("IX_ChatSessions_UserId_IsActive");
 
                     b.ToTable("ChatSessions", (string)null);
                 });
@@ -186,68 +203,20 @@ namespace ChatAI.Infrastructure.Migrations
                     b.ToTable("KnowledgeDocuments", (string)null);
                 });
 
-            modelBuilder.Entity("ChatAI.Domain.Entities.UserMemory", b =>
+            modelBuilder.Entity("ChatAI.Domain.Entities.ChatMessage", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                    b.HasOne("ChatAI.Domain.Entities.ChatSession", "Session")
+                        .WithMany("Messages")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
-                    b.Property<string>("Category")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                    b.Navigation("Session");
+                });
 
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("EmbeddingReference")
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<string>("Importance")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
-
-                    b.Property<string>("Key")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<decimal?>("RelevanceScore")
-                        .HasColumnType("decimal(5,4)");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<string>("Value")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Category")
-                        .HasDatabaseName("IX_UserMemories_Category");
-
-                    b.HasIndex("Importance")
-                        .HasDatabaseName("IX_UserMemories_Importance");
-
-                    b.HasIndex("UserId")
-                        .HasDatabaseName("IX_UserMemories_UserId");
-
-                    b.HasIndex("UserId", "Category")
-                        .HasDatabaseName("IX_UserMemories_User_Category");
-
-                    b.ToTable("UserMemories", (string)null);
+            modelBuilder.Entity("ChatAI.Domain.Entities.ChatSession", b =>
+                {
+                    b.Navigation("Messages");
                 });
 #pragma warning restore 612, 618
         }

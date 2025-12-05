@@ -361,3 +361,19 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# ============================================
+# SECURITY: Environment Variables & Secrets
+# ============================================
+# Never commit these files - they contain API keys and passwords
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Development secrets
+**/appsettings.Development.json
+secrets.json
+
+# Docker override (may contain secrets)
+docker-compose.override.yml

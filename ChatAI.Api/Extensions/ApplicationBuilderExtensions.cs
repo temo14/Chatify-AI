@@ -1,3 +1,4 @@
+using ChatAI.Application.Interfaces;
 using ChatAI.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,9 +25,24 @@ public static class ApplicationBuilderExtensions
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
+        // Run SQL Server migrations
         logger.LogInformation("Running database migrations...");
         await db.Database.MigrateAsync();
 
+        // Initialize Qdrant vector database
+        try
+        {
+            logger.LogInformation("Initializing Qdrant vector database...");
+            var vectorService = scope.ServiceProvider.GetRequiredService<IVectorService>();
+            await vectorService.InitializeAsync();
+            logger.LogInformation("✓ Qdrant initialized successfully");
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to initialize Qdrant - vector search may not work. Ensure Qdrant is running.");
+        }
+
+        // Seed data
         logger.LogInformation("Seeding database with test data...");
         var seeder = new DbSeeder(db, scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>());
         await seeder.SeedAsync();

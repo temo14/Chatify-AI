@@ -1,9 +1,10 @@
 namespace ChatAI.Domain.Entities;
 
 /// <summary>
-/// Represents your "base knowledge" - documents that AI can always reference.
-/// This is the foundation for RAG (Retrieval-Augmented Generation).
-/// Examples: Company policies, product docs, FAQs, training materials, etc.
+/// Knowledge base documents for Chatify AI
+/// These are the documents that AI can reference (RAG)
+/// Managed via control panel (future feature)
+/// Examples: FAQs, documentation, company info, product details
 /// </summary>
 public class KnowledgeDocument
 {
@@ -15,28 +16,29 @@ public class KnowledgeDocument
     public string Title { get; set; } = string.Empty;
     
     /// <summary>
-    /// Full document content
+    /// Full document content (will be chunked for embeddings)
     /// </summary>
     public string Content { get; set; } = string.Empty;
     
     /// <summary>
-    /// Source of the document (URL, file path, etc.)
+    /// Source of the document (URL, file name, manual entry, etc.)
     /// </summary>
     public string? Source { get; set; }
     
     /// <summary>
-    /// Category or type of knowledge (e.g., "policy", "faq", "technical", "product")
+    /// Category for organization (e.g., "FAQ", "Product", "Policy", "Technical")
+    /// Used in future control panel for filtering
     /// </summary>
     public string? Category { get; set; }
     
     /// <summary>
-    /// Reference to vector embedding (for semantic search)
-    /// This could be an ID in a vector database like Qdrant, Pinecone, etc.
+    /// Reference to vector embedding in Qdrant (for semantic search)
+    /// Format: "qdrant:{documentId}" or vector DB reference
     /// </summary>
     public string? EmbeddingReference { get; set; }
     
     /// <summary>
-    /// When this document was added to the knowledge base
+    /// When this document was added
     /// </summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     
@@ -46,12 +48,14 @@ public class KnowledgeDocument
     public DateTime? UpdatedAt { get; set; }
     
     /// <summary>
-    /// Additional metadata as JSON (tags, author, version, etc.)
+    /// Additional metadata as JSON (tags, author, version, language, etc.)
+    /// Flexible for future control panel features
     /// </summary>
     public string? MetadataJson { get; set; }
     
     /// <summary>
-    /// Whether this document is active and should be included in searches
+    /// Whether this document is active and should be included in AI searches
+    /// Control panel can toggle this
     /// </summary>
     public bool IsActive { get; set; } = true;
 }

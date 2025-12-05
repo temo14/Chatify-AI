@@ -3,12 +3,16 @@ using ChatAI.Application.Configuration;
 using ChatAI.Application.Interfaces;
 using ChatAI.Application.Services;
 using ChatAI.Infrastructure.Data;
+using ChatAI.Infrastructure.HealthChecks;
 using ChatAI.Infrastructure.Repositories;
-using ChatAI.Infrastructure.Tools;
+using ChatAI.Infrastructure.Services;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
+using Microsoft.SemanticKernel;
+using Qdrant.Client;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
-using ChatifyAIClient = ChatAI.Infrastructure.AI.AzureOpenAIClient;
 
 namespace ChatAI.Api.Extensions;
 
@@ -49,6 +53,12 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(AzureOpenAIOptions.SectionName));
         services.Configure<ChatOptions>(
             configuration.GetSection(ChatOptions.SectionName));
+        services.Configure<QdrantOptions>(
+            configuration.GetSection(QdrantOptions.SectionName));
+        services.Configure<ResilienceOptions>(
+            configuration.GetSection("Resilience"));
+        services.Configure<CacheOptions>(
+            configuration.GetSection(CacheOptions.SectionName));
 
         // Register ChatClient for chat completions
         services.AddSingleton(sp =>
@@ -78,24 +88,102 @@ public static class ServiceCollectionExtensions
             return azureClient.GetEmbeddingClient(config.EmbeddingDeploymentName);
         });
 
+        // Register Semantic Kernel (Infrastructure layer factory)
+        services.AddSingleton(sp =>
+        {
+            var config = configuration.GetSection(AzureOpenAIOptions.SectionName)
+                .Get<AzureOpenAIOptions>() 
+                ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
+
+            return ChatAI.Infrastructure.AI.SemanticKernelFactory.CreateKernel(config);
+        });
+
         return services;
     }
 
     /// <summary>
-    /// Add application services (ChatService, Repositories, Tools)
+    /// Add application services (Semantic Kernel ChatService, Repositories, Cache)
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services)
     {
+        // MediatR for CQRS (Command/Query Responsibility Segregation)
+        services.AddMediatR(cfg =>
+        {
+            cfg.RegisterServicesFromAssembly(typeof(SemanticKernelChatService).Assembly);
+            
+            // Add validation pipeline behavior
+            cfg.AddOpenBehavior(typeof(ChatAI.Application.Behaviors.ValidationBehavior<,>));
+        });
+
+        // FluentValidation validators
+        services.AddValidatorsFromAssembly(typeof(SemanticKernelChatService).Assembly);
+        
+        // Memory cache
+        services.AddMemoryCache(options =>
+        {
+            options.SizeLimit = 10000; // Max 10,000 cached items
+        });
+        
+        // Cache service (Singleton - shared cache)
+        services.AddSingleton<ICacheService, ChatAI.Infrastructure.Services.MemoryCacheService>();
+        
+        // Resilience policies (Singleton - shared policies)
+        services.AddSingleton<ChatAI.Infrastructure.Resilience.ResiliencePolicies>();
+        
+        // Vector service (Singleton - shared connection pool)
+        services.AddSingleton<IVectorService, QdrantVectorService>();
+        
         // Repositories (Scoped - per request lifecycle)
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
 
-        // Application services
-        services.AddScoped<IAIClient, ChatifyAIClient>();
-        services.AddScoped<IChatService, ChatService>();
-        
-        // Tools (Singleton - shared across all requests)
-        services.AddSingleton<IToolExecutor, ToolExecutor>();
+        // Chat services - Using Semantic Kernel for AI orchestration
+        services.AddScoped<IChatService, SemanticKernelChatService>();
+        services.AddScoped<IChatStreamService, ChatStreamService>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Add health checks for external dependencies
+    /// </summary>
+    public static IServiceCollection AddHealthCheckServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var azureConfig = configuration.GetSection(AzureOpenAIOptions.SectionName)
+            .Get<AzureOpenAIOptions>() 
+            ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
+
+        var connectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("Database connection string is missing");
+
+        var healthChecks = services.AddHealthChecks();
+
+        // SQL Server health check
+        healthChecks.AddSqlServer(
+            connectionString,
+            name: "sqlserver",
+            tags: new[] { "database", "sql" });
+
+        // Qdrant health check
+        healthChecks.AddCheck<QdrantHealthCheck>(
+            "qdrant",
+            tags: new[] { "vector", "qdrant" });
+
+        // Azure OpenAI health check
+        healthChecks.AddCheck(
+            "azureopenai",
+            () =>
+            {
+                var azureClient = services.BuildServiceProvider()
+                    .GetRequiredService<AzureOpenAISDK>();
+                var logger = services.BuildServiceProvider()
+                    .GetRequiredService<ILogger<AzureOpenAIHealthCheck>>();
+                var check = new AzureOpenAIHealthCheck(azureClient, logger, azureConfig.ChatDeploymentName);
+                return check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext()).Result;
+            },
+            tags: new[] { "ai", "azureopenai" });
 
         return services;
     }
@@ -113,29 +201,6 @@ public static class ServiceCollectionExtensions
                 Title = "Chatify AI API",
                 Version = "v1",
                 Description = "AI-powered chatbot with RAG, tool calling, and persistent conversations"
-            });
-
-            // Add API Key authentication to Swagger UI
-            c.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme 
-            {
-                Name = "X-API-Key",
-                Type = SecuritySchemeType.ApiKey,
-                In = ParameterLocation.Header,
-                Description = "Enter your API key (e.g., demo-key-12345, test-key-67890, or admin-key-abcdef)",
-                Scheme = "ApiKeyScheme"
-            });
-
-            // Require API key for all endpoints
-            c.AddSecurityRequirement(doc =>
-            {
-                var securityRequirement = new OpenApiSecurityRequirement
-                {
-                    {
-                        new OpenApiSecuritySchemeReference("ApiKey", doc),
-                        new List<string>()
-                    }
-                };
-                return securityRequirement;
             });
         });
         

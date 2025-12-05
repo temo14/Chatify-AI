@@ -12,37 +12,17 @@ namespace ChatAI.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "ChatMessages",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    SessionId = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Role = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
-                    Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    IsToolCall = table.Column<bool>(type: "bit", nullable: false),
-                    ToolName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
-                    ToolArguments = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    ToolResult = table.Column<string>(type: "nvarchar(max)", nullable: true),
-                    EmbeddingReference = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ChatMessages", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "ChatSessions",
                 columns: table => new
                 {
-                    Id = table.Column<string>(type: "nvarchar(450)", nullable: false),
-                    UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    Id = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Title = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                    SessionMetadata = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    LastActivityAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
-                    Title = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true)
+                    LastActivityAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -70,24 +50,33 @@ namespace ChatAI.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "UserMemories",
+                name: "ChatMessages",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Key = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Value = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SessionId = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    UserId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    Role = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
                     Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    Category = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
-                    Importance = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    Timestamp = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    IsToolCall = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    ToolName = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
+                    ToolArguments = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ToolResult = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     EmbeddingReference = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
-                    RelevanceScore = table.Column<decimal>(type: "decimal(5,4)", nullable: true)
+                    InputTokens = table.Column<int>(type: "int", nullable: true),
+                    OutputTokens = table.Column<int>(type: "int", nullable: true),
+                    TotalTokens = table.Column<int>(type: "int", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_UserMemories", x => x.Id);
+                    table.PrimaryKey("PK_ChatMessages", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ChatMessages_ChatSessions_SessionId",
+                        column: x => x.SessionId,
+                        principalTable: "ChatSessions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(
@@ -116,14 +105,19 @@ namespace ChatAI.Infrastructure.Migrations
                 column: "CreatedAt");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ChatSessions_IsActive",
+                table: "ChatSessions",
+                column: "IsActive");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ChatSessions_LastActivity",
+                table: "ChatSessions",
+                column: "LastActivityAt");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ChatSessions_UserId",
                 table: "ChatSessions",
                 column: "UserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ChatSessions_UserId_IsActive",
-                table: "ChatSessions",
-                columns: new[] { "UserId", "IsActive" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_KnowledgeDocuments_Category",
@@ -149,26 +143,6 @@ namespace ChatAI.Infrastructure.Migrations
                 name: "IX_KnowledgeDocuments_Source",
                 table: "KnowledgeDocuments",
                 column: "Source");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_UserMemories_Category",
-                table: "UserMemories",
-                column: "Category");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_UserMemories_Importance",
-                table: "UserMemories",
-                column: "Importance");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_UserMemories_User_Category",
-                table: "UserMemories",
-                columns: new[] { "UserId", "Category" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_UserMemories_UserId",
-                table: "UserMemories",
-                column: "UserId");
         }
 
         /// <inheritdoc />
@@ -178,13 +152,10 @@ namespace ChatAI.Infrastructure.Migrations
                 name: "ChatMessages");
 
             migrationBuilder.DropTable(
-                name: "ChatSessions");
-
-            migrationBuilder.DropTable(
                 name: "KnowledgeDocuments");
 
             migrationBuilder.DropTable(
-                name: "UserMemories");
+                name: "ChatSessions");
         }
     }
 }

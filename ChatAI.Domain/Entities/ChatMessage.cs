@@ -4,22 +4,35 @@ namespace ChatAI.Domain.Entities;
 
 /// <summary>
 /// Represents a single message in a chat conversation
+/// Simple design: Belongs to a session, optional user for future
 /// </summary>
 public class ChatMessage
 {
-    public Guid Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    
+    // Relationships
     public string SessionId { get; set; } = string.Empty;
-    public string UserId { get; set; } = string.Empty;
+    public string? UserId { get; set; } // Optional - for future authentication
+    
+    // Message content
     public MessageRole Role { get; set; }
     public string Content { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
     
-    // Tool call information (if this message involved a tool)
+    // Tool call information (Semantic Kernel function execution)
     public bool IsToolCall { get; set; }
     public string? ToolName { get; set; }
     public string? ToolArguments { get; set; }
     public string? ToolResult { get; set; }
     
-    // Optional: For future RAG/embedding support
+    // RAG/Embedding support
     public string? EmbeddingReference { get; set; }
+    
+    // Token usage tracking (for billing)
+    public int? InputTokens { get; set; }
+    public int? OutputTokens { get; set; }
+    public int? TotalTokens { get; set; }
+    
+    // Navigation
+    public ChatSession? Session { get; set; }
 }

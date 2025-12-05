@@ -1,3 +1,4 @@
+using ChatAI.Application.Interfaces;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
