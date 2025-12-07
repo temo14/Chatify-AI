@@ -29,6 +29,11 @@ public interface IChatSessionRepository
     Task<IEnumerable<ChatMessage>> GetSessionMessagesAsync(string sessionId, CancellationToken ct = default);
     
     /// <summary>
+    /// Get paginated messages for a specific session
+    /// </summary>
+    Task<IEnumerable<ChatMessage>> GetSessionMessagesAsync(string sessionId, int skip, int take, CancellationToken ct = default);
+    
+    /// <summary>
     /// Add a message to a session
     /// </summary>
     Task<ChatMessage> AddMessageAsync(ChatMessage message, CancellationToken ct = default);

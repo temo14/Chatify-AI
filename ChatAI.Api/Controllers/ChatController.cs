@@ -6,8 +6,13 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ChatAI.Api.Controllers;
 
+/// <summary>
+/// Chat controller for non-streaming chat interactions
+/// Thin controller - delegates all logic to Application layer via CQRS (MediatR)
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Produces("application/json")]
 public class ChatController : ControllerBase
 {
     private readonly ISender _sender;
@@ -15,50 +20,63 @@ public class ChatController : ControllerBase
 
     public ChatController(ISender sender, ILogger<ChatController> logger)
     {
-        _sender = sender;
-        _logger = logger;
+        _sender = sender ?? throw new ArgumentNullException(nameof(sender));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
-    /// Send a chat message and get AI response.
-    /// SessionId Flow:
-    /// - New chat: Send sessionId as null/empty → Response includes new sessionId → Client stores it
-    /// - Continue chat: Send stored sessionId → Response uses existing conversation history
+    /// Send a chat message and get AI response
+    /// SessionId Flow: null/empty = new chat, existing = continue conversation
     /// </summary>
+    /// <param name="dto">Chat request with message and optional sessionId</param>
+    /// <response code="200">Returns AI response with sessionId</response>
+    /// <response code="400">Invalid request</response>
+    /// <response code="500">Internal server error</response>
     [HttpPost("send")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> SendMessage([FromBody] ChatRequestDto dto)
     {
-        _logger.LogInformation("Chat request - UserId: {UserId}, SessionId: {SessionId}, NewChat: {IsNewChat}", 
-            dto.UserId ?? "null", dto.SessionId ?? "null (new chat)", string.IsNullOrWhiteSpace(dto.SessionId));
-        
-        // Use CQRS command pattern
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        _logger.LogInformation("Chat request - UserId: {UserId}, SessionId: {SessionId}", 
+            dto.UserId ?? "anonymous", dto.SessionId ?? "new");
+    
         var command = new SendChatCommand
         {
             UserId = dto.UserId,
             Message = dto.Message,
-            SessionId = dto.SessionId, // Null = create new session, Non-null = continue existing
+            SessionId = dto.SessionId,
             UseTools = dto.UseTools
         };
         
         var result = await _sender.Send(command);
-        
-        // Response ALWAYS includes sessionId (new or existing)
-        // Client should store this sessionId for continuing the conversation
         return Ok(ChatResponseDto.FromDomain(result));
     }
 
     /// <summary>
-    /// Get all chat sessions for a user (requires userId parameter)
+    /// Get all chat sessions for a user
     /// </summary>
+    /// <param name="userId">User identifier (required)</param>
+    /// <param name="onlyActive">Only return active sessions (default: true)</param>
+    /// <response code="200">Returns list of user sessions</response>
+    /// <response code="400">UserId parameter missing</response>
+    /// <response code="500">Internal server error</response>
     [HttpGet("sessions")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetSessions([FromQuery] string? userId, [FromQuery] bool onlyActive = true)
     {
-        if (string.IsNullOrEmpty(userId))
+        if (string.IsNullOrWhiteSpace(userId))
         {
             return BadRequest(new { error = "UserId parameter is required" });
         }
 
-        // Use CQRS query pattern
         var query = new GetUserSessionsQuery
         {
             UserId = userId,
@@ -72,12 +90,29 @@ public class ChatController : ControllerBase
     /// <summary>
     /// Get conversation history for a specific session
     /// </summary>
+    /// <param name="sessionId">Session identifier</param>
+    /// <param name="maxMessages">Maximum messages to return (default: 20)</param>
+    /// <response code="200">Returns conversation messages</response>
+    /// <response code="400">Invalid parameters</response>
+    /// <response code="500">Internal server error</response>
     [HttpGet("sessions/{sessionId}/messages")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> GetConversationHistory(
         string sessionId, 
         [FromQuery] int maxMessages = 20)
     {
-        // Use CQRS query pattern
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return BadRequest(new { error = "SessionId parameter is required" });
+        }
+
+        if (maxMessages < 1 || maxMessages > 100)
+        {
+            return BadRequest(new { error = "MaxMessages must be between 1 and 100" });
+        }
+
         var query = new GetConversationHistoryQuery
         {
             SessionId = sessionId,

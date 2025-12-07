@@ -27,6 +27,7 @@ public class ChatStreamService : IChatStreamService
     private readonly ILogger<ChatStreamService> _logger;
     private readonly ChatOptions _options;
     private readonly CacheOptions _cacheOptions;
+    private readonly ConfigurationService _configService;
 
     public ChatStreamService(
         Kernel kernel,
@@ -35,7 +36,8 @@ public class ChatStreamService : IChatStreamService
         ICacheService cacheService,
         ILogger<ChatStreamService> logger,
         IOptions<ChatOptions> options,
-        IOptions<CacheOptions> cacheOptions)
+        IOptions<CacheOptions> cacheOptions,
+        ConfigurationService configService)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
@@ -45,6 +47,7 @@ public class ChatStreamService : IChatStreamService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
+        _configService = configService ?? throw new ArgumentNullException(nameof(configService));
     }
 
     public async IAsyncEnumerable<StreamChunk> HandleStreamAsync(
@@ -77,12 +80,17 @@ public class ChatStreamService : IChatStreamService
         DateTime startTime,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        ChatSession? session = null;
+        ChatSession session;
         var sequenceNumber = 0;
         var completeResponse = new List<string>();
 
         // 1. Get or create session
-        session = await GetOrCreateSessionAsync(request.UserId, request.SessionId);
+        session = await GetOrCreateSessionAsync(request.UserId ?? "anonymous", request.SessionId);
+        
+        if (session == null)
+        {
+            throw new InvalidOperationException("Failed to create or retrieve chat session");
+        }
 
         // 2. RAG: Search knowledge base
         var relevantKnowledge = await SearchKnowledgeBaseAsync(request.Message);
@@ -90,15 +98,21 @@ public class ChatStreamService : IChatStreamService
         // 3. Build conversation history
         var chatHistory = await BuildConversationHistoryAsync(request, session.Id, relevantKnowledge);
 
-        // 4. Stream AI response using Semantic Kernel
+        // 4. Load AI settings from database configuration
+        var aiSettings = await _configService.GetAISettingsAsync(cancellationToken);
+
+        // 5. Stream AI response using Semantic Kernel with dynamic configuration
         var settings = new AzureOpenAIPromptExecutionSettings
         {
-            Temperature = 0.7,
-            MaxTokens = 800,
-            TopP = 0.9,
-            FrequencyPenalty = 0.0,
-            PresencePenalty = 0.0
+            Temperature = aiSettings.Temperature,
+            MaxTokens = aiSettings.MaxTokens,
+            TopP = aiSettings.TopP,
+            FrequencyPenalty = aiSettings.FrequencyPenalty,
+            PresencePenalty = aiSettings.PresencePenalty
         };
+
+        _logger.LogDebug("Streaming with AI settings: Temp={Temp}, MaxTokens={MaxTokens}", 
+            settings.Temperature, settings.MaxTokens);
 
         await foreach (var contentChunk in _chatCompletion.GetStreamingChatMessageContentsAsync(
             chatHistory, 
@@ -124,7 +138,7 @@ public class ChatStreamService : IChatStreamService
 
         // 5. Save conversation to database
         var fullResponse = string.Join("", completeResponse);
-        await SaveStreamedConversationAsync(session.Id, request.UserId, request.Message, fullResponse);
+        await SaveStreamedConversationAsync(session.Id, request.UserId ?? "anonymous", request.Message, fullResponse);
 
         // 6. Update session
         await UpdateSessionAsync(session);
@@ -176,7 +190,7 @@ public class ChatStreamService : IChatStreamService
     {
         try
         {
-            var documents = await _knowledgeRepository.SearchAsync(query, topK: 3);
+            var documents = await _knowledgeRepository.SearchAsync(query, topK: _options.RagTopK);
             var results = documents.ToList();
             
             _logger.LogInformation("RAG: Found {Count} relevant knowledge documents", results.Count);
@@ -201,20 +215,17 @@ public class ChatStreamService : IChatStreamService
         var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs);
         chatHistory.AddSystemMessage(systemPrompt);
 
-        // Load previous messages (with caching)
-        var cacheKey = $"conversation_history:{sessionId}";
-        var previousMessages = await _cacheService.GetOrCreateAsync(
+        // Load previous messages with pagination (only load what we need)
+        var cacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
+        var recentMessages = await _cacheService.GetOrCreateAsync(
             cacheKey,
-            async () => await _sessionRepository.GetSessionMessagesAsync(sessionId),
-            TimeSpan.FromMinutes(_cacheOptions.ConversationExpirationMinutes));
+            async () => await _sessionRepository.GetSessionMessagesAsync(
+                sessionId, 
+                skip: 0, 
+                take: _options.MaxConversationHistory).ConfigureAwait(false),
+            TimeSpan.FromMinutes(_cacheOptions.ConversationExpirationMinutes)).ConfigureAwait(false);
         
-        var recentMessages = previousMessages
-            .OrderByDescending(m => m.Timestamp)
-            .Take(_options.MaxConversationHistory)
-            .Reverse()
-            .ToList();
-        
-        // Add historical messages
+        // Add historical messages (already sorted and limited by pagination)
         foreach (var msg in recentMessages)
         {
             if (msg.Role == MessageRole.User)
@@ -276,10 +287,10 @@ public class ChatStreamService : IChatStreamService
                 }
             };
 
-            await _sessionRepository.AddMessagesAsync(messages);
+            await _sessionRepository.AddMessagesAsync(messages).ConfigureAwait(false);
             
             // Invalidate cache
-            var cacheKey = $"conversation_history:{sessionId}";
+            var cacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
             _cacheService.Remove(cacheKey);
             
             _logger.LogInformation("Saved streamed conversation to session {SessionId}", sessionId);

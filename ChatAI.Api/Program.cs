@@ -37,6 +37,9 @@ try
 
     await app.UseDatabaseMigrationsAsync(app.Environment);
 
+    // Global exception handler - must be first in pipeline
+    app.UseGlobalExceptionHandler();
+
     // Temporarily disable rate limiting for testing
     // app.UseIpRateLimiting();
     app.UseHttpsRedirection();

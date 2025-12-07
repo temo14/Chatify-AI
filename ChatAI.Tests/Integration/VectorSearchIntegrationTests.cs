@@ -1,5 +1,6 @@
 using ChatAI.Application.Configuration;
 using ChatAI.Application.Interfaces;
+using ChatAI.Infrastructure.Resilience;
 using ChatAI.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,7 @@ public class VectorSearchIntegrationTests
     private readonly IVectorService _vectorService;
     private readonly ILogger<QdrantVectorService> _logger;
     private readonly QdrantOptions _options;
+    private readonly ResiliencePolicies _resiliencePolicies;
 
     public VectorSearchIntegrationTests()
     {
@@ -28,8 +30,15 @@ public class VectorSearchIntegrationTests
             VectorSize = 1536
         };
 
+        var resilienceOptions = new ResilienceOptions
+        {
+            Enabled = false // Disable resilience for tests
+        };
+
         _logger = NullLogger<QdrantVectorService>.Instance;
-        _vectorService = new QdrantVectorService(_logger, Options.Create(_options));
+        var resilienceLogger = NullLogger<ResiliencePolicies>.Instance;
+        _resiliencePolicies = new ResiliencePolicies(Options.Create(resilienceOptions), resilienceLogger);
+        _vectorService = new QdrantVectorService(_logger, Options.Create(_options), _resiliencePolicies);
     }
 
     [Fact(Skip = "Requires Qdrant running")]

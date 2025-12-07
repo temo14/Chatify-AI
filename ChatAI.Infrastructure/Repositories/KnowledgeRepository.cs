@@ -1,7 +1,9 @@
 using ChatAI.Application.Configuration;
 using ChatAI.Application.Interfaces;
+using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Infrastructure.Data;
+using ChatAI.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,6 +23,7 @@ public class KnowledgeRepository : IKnowledgeRepository
     private readonly ICacheService _cacheService;
     private readonly ILogger<KnowledgeRepository> _logger;
     private readonly CacheOptions _cacheOptions;
+    private readonly ChatOptions _chatOptions;
 
     public KnowledgeRepository(
         ChatDbContext context,
@@ -28,7 +31,8 @@ public class KnowledgeRepository : IKnowledgeRepository
         IVectorService vectorService,
         ICacheService cacheService,
         ILogger<KnowledgeRepository> logger,
-        IOptions<CacheOptions> cacheOptions)
+        IOptions<CacheOptions> cacheOptions,
+        IOptions<ChatOptions> chatOptions)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _embeddingClient = embeddingClient ?? throw new ArgumentNullException(nameof(embeddingClient));
@@ -36,6 +40,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
+        _chatOptions = chatOptions?.Value ?? throw new ArgumentNullException(nameof(chatOptions));
     }
 
     public async Task<KnowledgeDocument?> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -65,15 +70,15 @@ public class KnowledgeRepository : IKnowledgeRepository
             {
                 _logger.LogDebug("Generating embedding for document: {Title}", entity.Title);
                 
-                var embeddingCacheKey = $"embedding:{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(entity.Content)).GetHashCode()}";
+                var embeddingCacheKey = CacheKeyBuilder.EmbeddingFromContent(entity.Content);
                 var embedding = await _cacheService.GetOrCreateAsync(
                     embeddingCacheKey,
                     async () =>
                     {
-                        var response = await _embeddingClient.GenerateEmbeddingAsync(entity.Content);
+                        var response = await _embeddingClient.GenerateEmbeddingAsync(entity.Content).ConfigureAwait(false);
                         return response.Value.ToFloats().ToArray();
                     },
-                    TimeSpan.FromHours(_cacheOptions.EmbeddingExpirationHours));
+                    TimeSpan.FromHours(_cacheOptions.EmbeddingExpirationHours)).ConfigureAwait(false);
                 
                 // Store embedding in Qdrant
                 var metadata = new Dictionary<string, string>
@@ -92,12 +97,12 @@ public class KnowledgeRepository : IKnowledgeRepository
             _context.KnowledgeDocuments.Add(entity);
             await _context.SaveChangesAsync(ct);
             
-            _logger.LogInformation("Added knowledge document {Id}: {Title}", entity.Id, entity.Title);
+            _logger.LogInformation("✅ Added knowledge document {Id}: {Title}", entity.Id, entity.Title);
             return entity;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error adding knowledge document {Title}", entity.Title);
+            _logger.LogError(ex, "❌ Error adding knowledge document {Title}", entity.Title);
             throw;
         }
     }
@@ -132,7 +137,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         _context.KnowledgeDocuments.Update(entity);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogInformation("Updated knowledge document {Id}", entity.Id);
+        _logger.LogInformation("✅ Updated knowledge document {Id}", entity.Id);
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
@@ -145,7 +150,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             
             _context.KnowledgeDocuments.Remove(doc);
             await _context.SaveChangesAsync(ct);
-            _logger.LogInformation("Deleted knowledge document {Id}", id);
+            _logger.LogInformation("✅ Deleted knowledge document {Id}", id);
         }
     }
 
@@ -161,7 +166,7 @@ public class KnowledgeRepository : IKnowledgeRepository
     {
         try
         {
-            _logger.LogInformation("Searching knowledge base for: {Query}", query);
+            _logger.LogInformation("🔍 Searching knowledge base for: {Query}", query);
             
             // Generate embedding for query
             var embeddingResponse = await _embeddingClient.GenerateEmbeddingAsync(query);
@@ -171,17 +176,17 @@ public class KnowledgeRepository : IKnowledgeRepository
             var similarDocIds = await _vectorService.SearchSimilarAsync(
                 queryEmbedding, 
                 limit: topK * 2, // Get more than needed for filtering
-                scoreThreshold: 0.7, // Only return documents with >70% similarity
+                scoreThreshold: _chatOptions.SearchScoreThreshold, // Use configured threshold
                 ct: ct
             );
             
             if (!similarDocIds.Any())
             {
-                _logger.LogInformation("No similar documents found above threshold");
+                _logger.LogInformation("❌ No similar documents found above threshold ({Threshold})", _chatOptions.SearchScoreThreshold);
                 return Enumerable.Empty<KnowledgeDocument>();
             }
             
-            _logger.LogInformation("Vector search found {Count} candidates", similarDocIds.Count);
+            _logger.LogInformation("✅ Vector search found {Count} candidates", similarDocIds.Count);
             
             // Fetch full documents from database
             var docIds = similarDocIds.Select(x => x.DocumentId).ToList();

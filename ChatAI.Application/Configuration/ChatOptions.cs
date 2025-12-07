@@ -10,4 +10,20 @@ public class ChatOptions
     public int MaxToolCalls { get; set; } = 5;
     public int MaxConversationHistory { get; set; } = 20;
     public string DefaultSystemPrompt { get; set; } = "You are a helpful AI assistant.";
+    
+    /// <summary>
+    /// Maximum message length in characters
+    /// </summary>
+    public int MaxMessageLength { get; set; } = 10000;
+    
+    /// <summary>
+    /// Minimum semantic similarity score threshold (0.0 to 1.0)
+    /// Documents below this threshold won't be included in RAG context
+    /// </summary>
+    public double SearchScoreThreshold { get; set; } = 0.7;
+    
+    /// <summary>
+    /// Number of relevant documents to retrieve for RAG
+    /// </summary>
+    public int RagTopK { get; set; } = 3;
 }

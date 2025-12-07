@@ -47,7 +47,8 @@ public class QdrantHealthCheck : IHealthCheck
                 { "collection", _collectionName },
                 { "vectorCount", collectionInfo.VectorsCount },
                 { "pointsCount", collectionInfo.PointsCount },
-                { "status", collectionInfo.Status.ToString() }
+                { "status", collectionInfo.Status.ToString() },
+                { "indexedVectorsCount", collectionInfo.IndexedVectorsCount }
             };
 
             _logger.LogDebug("Qdrant health check passed: {PointsCount} points in collection", 

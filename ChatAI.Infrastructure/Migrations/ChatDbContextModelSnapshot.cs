@@ -22,6 +22,69 @@ namespace ChatAI.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("ChatAI.Domain.Entities.AdminConfiguration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DataType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ValidationRule")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Category")
+                        .HasDatabaseName("IX_AdminConfigurations_Category");
+
+                    b.HasIndex("IsActive")
+                        .HasDatabaseName("IX_AdminConfigurations_IsActive");
+
+                    b.HasIndex("Key")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AdminConfigurations_Key");
+
+                    b.ToTable("AdminConfigurations", (string)null);
+                });
+
             modelBuilder.Entity("ChatAI.Domain.Entities.ChatMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -201,6 +264,59 @@ namespace ChatAI.Infrastructure.Migrations
                         .HasDatabaseName("IX_KnowledgeDocuments_Category_Active");
 
                     b.ToTable("KnowledgeDocuments", (string)null);
+                });
+
+            modelBuilder.Entity("ChatAI.Domain.Entities.MessageFeedback", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("Category")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Rating")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("IX_MessageFeedbacks_CreatedAt");
+
+                    b.HasIndex("MessageId")
+                        .HasDatabaseName("IX_MessageFeedbacks_MessageId");
+
+                    b.HasIndex("Rating")
+                        .HasDatabaseName("IX_MessageFeedbacks_Rating");
+
+                    b.HasIndex("SessionId")
+                        .HasDatabaseName("IX_MessageFeedbacks_SessionId");
+
+                    b.ToTable("MessageFeedbacks", (string)null);
                 });
 
             modelBuilder.Entity("ChatAI.Domain.Entities.ChatMessage", b =>

@@ -19,6 +19,10 @@ public class ChatDbContext : DbContext
     
     // Knowledge base (RAG) - managed via future control panel
     public DbSet<KnowledgeDocument> KnowledgeDocuments { get; set; } = null!;
+    
+    // Feedback and configuration
+    public DbSet<MessageFeedback> MessageFeedbacks { get; set; } = null!;
+    public DbSet<AdminConfiguration> AdminConfigurations { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,6 +117,52 @@ public class ChatDbContext : DbContext
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_KnowledgeDocuments_IsActive");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_KnowledgeDocuments_CreatedAt");
             entity.HasIndex(e => new { e.Category, e.IsActive }).HasDatabaseName("IX_KnowledgeDocuments_Category_Active");
+        });
+        
+        // ===== MESSAGE FEEDBACK =====
+        modelBuilder.Entity<MessageFeedback>(entity =>
+        {
+            entity.ToTable("MessageFeedbacks");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.MessageId).IsRequired();
+            entity.Property(e => e.UserId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.SessionId).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Rating).IsRequired();
+            entity.Property(e => e.Comment).HasMaxLength(1000);
+            entity.Property(e => e.IpAddress).HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            
+            // Indexes for analytics queries
+            entity.HasIndex(e => e.MessageId).HasDatabaseName("IX_MessageFeedbacks_MessageId");
+            entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_MessageFeedbacks_SessionId");
+            entity.HasIndex(e => e.Rating).HasDatabaseName("IX_MessageFeedbacks_Rating");
+            entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_MessageFeedbacks_CreatedAt");
+        });
+        
+        // ===== ADMIN CONFIGURATION =====
+        modelBuilder.Entity<AdminConfiguration>(entity =>
+        {
+            entity.ToTable("AdminConfigurations");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.Key).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Value).IsRequired().HasColumnType("nvarchar(max)");
+            entity.Property(e => e.DataType).IsRequired().HasMaxLength(50);
+            entity.Property(e => e.Category).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.ModifiedBy).HasMaxLength(100);
+            entity.Property(e => e.ValidationRule).HasMaxLength(500);
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
+            
+            // Unique key ensures no duplicate configuration keys
+            entity.HasIndex(e => e.Key).IsUnique().HasDatabaseName("IX_AdminConfigurations_Key");
+            entity.HasIndex(e => e.Category).HasDatabaseName("IX_AdminConfigurations_Category");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_AdminConfigurations_IsActive");
         });
     }
 }

@@ -1,5 +1,6 @@
 using ChatAI.Application.Configuration;
 using ChatAI.Application.Interfaces;
+using ChatAI.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
@@ -17,13 +18,16 @@ public class QdrantVectorService : IVectorService
     private readonly QdrantClient _client;
     private readonly ILogger<QdrantVectorService> _logger;
     private readonly QdrantOptions _options;
+    private readonly ResiliencePolicies _resiliencePolicies;
 
     public QdrantVectorService(
         ILogger<QdrantVectorService> logger,
-        IOptions<QdrantOptions> options)
+        IOptions<QdrantOptions> options,
+        ResiliencePolicies resiliencePolicies)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _resiliencePolicies = resiliencePolicies ?? throw new ArgumentNullException(nameof(resiliencePolicies));
 
         // Parse endpoint to extract host
         var uri = new Uri(_options.Endpoint);
@@ -51,39 +55,46 @@ public class QdrantVectorService : IVectorService
 
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        try
+        var retryPolicy = _resiliencePolicies.GetRetryPolicy<bool>("Qdrant-Initialize");
+        
+        await retryPolicy.ExecuteAsync(async token =>
         {
-            _logger.LogInformation("Initializing Qdrant collection: {CollectionName}", _options.CollectionName);
-
-            var collections = await _client.ListCollectionsAsync(cancellationToken: ct);
-            var collectionExists = collections.Contains(_options.CollectionName);
-
-            if (!collectionExists)
+            try
             {
-                _logger.LogInformation("Creating new collection with vector size {VectorSize}", _options.VectorSize);
+                _logger.LogInformation("Initializing Qdrant collection: {CollectionName}", _options.CollectionName);
 
-                await _client.CreateCollectionAsync(
-                    collectionName: _options.CollectionName,
-                    vectorsConfig: new VectorParams
-                    {
-                        Size = _options.VectorSize,
-                        Distance = Distance.Cosine
-                    },
-                    cancellationToken: ct
-                );
+                var collections = await _client.ListCollectionsAsync(cancellationToken: token);
+                var collectionExists = collections.Contains(_options.CollectionName);
 
-                _logger.LogInformation("✓ Collection created successfully");
+                if (!collectionExists)
+                {
+                    _logger.LogInformation("Creating new collection with vector size {VectorSize}", _options.VectorSize);
+
+                    await _client.CreateCollectionAsync(
+                        collectionName: _options.CollectionName,
+                        vectorsConfig: new VectorParams
+                        {
+                            Size = _options.VectorSize,
+                            Distance = Distance.Cosine
+                        },
+                        cancellationToken: token
+                    );
+
+                    _logger.LogInformation("✅ Collection created successfully");
+                }
+                else
+                {
+                    _logger.LogInformation("✅ Collection already exists");
+                }
+                
+                return true;
             }
-            else
+            catch (Exception ex)
             {
-                _logger.LogInformation("✓ Collection already exists");
+                _logger.LogError(ex, "❌ Failed to initialize Qdrant");
+                throw;
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize Qdrant");
-            throw;
-        }
+        }, ct);
     }
 
     public async Task StoreEmbeddingAsync(
@@ -92,36 +103,42 @@ public class QdrantVectorService : IVectorService
         Dictionary<string, string> metadata,
         CancellationToken ct = default)
     {
-        try
+        var retryPolicy = _resiliencePolicies.GetRetryPolicy<bool>("Qdrant-StoreEmbedding");
+        
+        await retryPolicy.ExecuteAsync(async token =>
         {
-            var payload = new Dictionary<string, Value>();
-            // Store original GUID in payload for retrieval
-            payload["document_id"] = documentId.ToString();
-            foreach (var kvp in metadata)
+            try
             {
-                payload[kvp.Key] = kvp.Value;
+                var payload = new Dictionary<string, Value>();
+                // Store original GUID in payload for retrieval
+                payload["document_id"] = documentId.ToString();
+                foreach (var kvp in metadata)
+                {
+                    payload[kvp.Key] = kvp.Value;
+                }
+
+                var point = new PointStruct
+                {
+                    Id = new PointId { Num = GuidToNumericId(documentId) },
+                    Vectors = embedding,
+                    Payload = { payload }
+                };
+
+                await _client.UpsertAsync(
+                    collectionName: _options.CollectionName,
+                    points: new[] { point },
+                    cancellationToken: token
+                );
+
+                _logger.LogDebug("✅ Stored embedding for {DocumentId}", documentId);
+                return true;
             }
-
-            var point = new PointStruct
+            catch (Exception ex)
             {
-                Id = new PointId { Num = GuidToNumericId(documentId) },
-                Vectors = embedding,
-                Payload = { payload }
-            };
-
-            await _client.UpsertAsync(
-                collectionName: _options.CollectionName,
-                points: new[] { point },
-                cancellationToken: ct
-            );
-
-            _logger.LogDebug("✓ Stored embedding for {DocumentId}", documentId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to store embedding");
-            throw;
-        }
+                _logger.LogError(ex, "❌ Failed to store embedding for {DocumentId}", documentId);
+                throw;
+            }
+        }, ct);
     }
 
     public async Task<List<(Guid DocumentId, double Score)>> SearchSimilarAsync(
@@ -130,58 +147,69 @@ public class QdrantVectorService : IVectorService
         double? scoreThreshold = null,
         CancellationToken ct = default)
     {
-        try
+        var retryPolicy = _resiliencePolicies.GetRetryPolicy<List<(Guid, double)>>("Qdrant-SearchSimilar");
+        
+        return await retryPolicy.ExecuteAsync(async token =>
         {
-            var searchResults = await _client.SearchAsync(
-                collectionName: _options.CollectionName,
-                vector: queryEmbedding,
-                limit: (ulong)limit,
-                scoreThreshold: scoreThreshold.HasValue ? (float)scoreThreshold.Value : null,
-                payloadSelector: true, // Include payload to get document_id
-                cancellationToken: ct
-            );
+            try
+            {
+                var searchResults = await _client.SearchAsync(
+                    collectionName: _options.CollectionName,
+                    vector: queryEmbedding,
+                    limit: (ulong)limit,
+                    scoreThreshold: scoreThreshold.HasValue ? (float)scoreThreshold.Value : null,
+                    payloadSelector: true, // Include payload to get document_id
+                    cancellationToken: token
+                );
 
-            var results = searchResults
-                .Select(r => {
-                    // Extract original GUID from payload
-                    var guidStr = r.Payload["document_id"].StringValue;
-                    return (
-                        DocumentId: Guid.Parse(guidStr),
-                        Score: (double)r.Score
-                    );
-                })
-                .ToList();
+                var results = searchResults
+                    .Select(r => {
+                        // Extract original GUID from payload
+                        var guidStr = r.Payload["document_id"].StringValue;
+                        return (
+                            DocumentId: Guid.Parse(guidStr),
+                            Score: (double)r.Score
+                        );
+                    })
+                    .ToList();
 
-            _logger.LogInformation("Found {Count} similar documents", results.Count);
-            return results;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to search");
-            throw;
-        }
+                _logger.LogInformation("✅ Found {Count} similar documents", results.Count);
+                return results;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed to search similar documents");
+                throw;
+            }
+        }, ct);
     }
 
     public async Task DeleteEmbeddingAsync(Guid documentId, CancellationToken ct = default)
     {
-        try
+        var retryPolicy = _resiliencePolicies.GetRetryPolicy<bool>("Qdrant-DeleteEmbedding");
+        
+        await retryPolicy.ExecuteAsync(async token =>
         {
-            var numericId = GuidToNumericId(documentId);
-            
-            await _client.DeleteAsync(
-                collectionName: _options.CollectionName,
-                id: numericId,
-                wait: true,
-                cancellationToken: ct
-            );
+            try
+            {
+                var numericId = GuidToNumericId(documentId);
+                
+                await _client.DeleteAsync(
+                    collectionName: _options.CollectionName,
+                    id: numericId,
+                    wait: true,
+                    cancellationToken: token
+                );
 
-            _logger.LogDebug("✓ Deleted embedding for {DocumentId}", documentId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete embedding");
-            throw;
-        }
+                _logger.LogDebug("✅ Deleted embedding for {DocumentId}", documentId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Failed to delete embedding for {DocumentId}", documentId);
+                throw;
+            }
+        }, ct);
     }
 
     public async Task ClearAllAsync(CancellationToken ct = default)

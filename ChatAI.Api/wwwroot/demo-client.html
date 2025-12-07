@@ -112,6 +112,56 @@
             background: white;
             border: 1px solid #e1e8ed;
             color: #333;
+            line-height: 1.6;
+        }
+        
+        .message.assistant .message-content h1,
+        .message.assistant .message-content h2,
+        .message.assistant .message-content h3 {
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .message.assistant .message-content h3 {
+            font-size: 16px;
+            color: #667eea;
+        }
+        
+        .message.assistant .message-content ul,
+        .message.assistant .message-content ol {
+            margin-left: 20px;
+            margin-top: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .message.assistant .message-content li {
+            margin-bottom: 4px;
+        }
+        
+        .message.assistant .message-content p {
+            margin-bottom: 12px;
+        }
+        
+        .message.assistant .message-content code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        
+        .message.assistant .message-content pre {
+            background: #f4f4f4;
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+        
+        .message.assistant .message-content strong {
+            font-weight: 600;
+            color: #333;
         }
         
         .message.system .message-content {
@@ -208,6 +258,8 @@
             }
         }
     </style>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
     <div class="chat-container">
@@ -243,30 +295,28 @@
 
     <script>
         const API_URL = '/api/chat'; // Update with your API URL
-        const SESSION_STORAGE_KEY = 'chatify_session_id';
         
         class ChatifyClient {
             constructor() {
-                this.sessionId = this.loadSessionId();
+                // Always start with a new session (no persistence)
+                this.sessionId = null;
                 this.updateSessionInfo();
             }
             
-            // Load sessionId from localStorage
+            // No longer load from localStorage - always fresh session
             loadSessionId() {
-                return localStorage.getItem(SESSION_STORAGE_KEY) || null;
+                return null;
             }
             
-            // Save sessionId to localStorage
+            // Save sessionId (in-memory only, no localStorage)
             saveSessionId(sessionId) {
                 this.sessionId = sessionId;
-                localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
                 this.updateSessionInfo();
             }
             
             // Clear sessionId (start new chat)
             clearSessionId() {
                 this.sessionId = null;
-                localStorage.removeItem(SESSION_STORAGE_KEY);
                 this.updateSessionInfo();
             }
             
@@ -331,7 +381,13 @@
             
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
+            
+            // Render Markdown for assistant messages, plain text for others
+            if (role === 'assistant' && typeof marked !== 'undefined') {
+                contentDiv.innerHTML = marked.parse(content);
+            } else {
+                contentDiv.textContent = content;
+            }
             
             messageDiv.appendChild(contentDiv);
             messagesDiv.appendChild(messageDiv);

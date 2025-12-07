@@ -1,14 +1,14 @@
 using ChatAI.Api.DTOs;
-using ChatAI.Application.Commands;
 using ChatAI.Application.Interfaces;
-using MediatR;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
-using System.Text;
 using System.Text.Json;
 
 namespace ChatAI.Api.Controllers;
 
+/// <summary>
+/// Controller for streaming chat responses using Server-Sent Events (SSE)
+/// Thin controller - handles HTTP streaming concerns, delegates logic to ChatStreamService
+/// </summary>
 [ApiController]
 [Route("api/[controller]")]
 public class ChatStreamController : ControllerBase
@@ -20,77 +20,74 @@ public class ChatStreamController : ControllerBase
         IChatStreamService chatStreamService, 
         ILogger<ChatStreamController> logger)
     {
-        _chatStreamService = chatStreamService;
-        _logger = logger;
+        _chatStreamService = chatStreamService ?? throw new ArgumentNullException(nameof(chatStreamService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Stream chat response using Server-Sent Events (SSE)
-    /// Note: Streaming uses IChatStreamService directly as MediatR doesn't natively support IAsyncEnumerable
+    /// Returns real-time AI response chunks as they're generated
     /// </summary>
+    /// <param name="dto">Chat request with message and optional sessionId</param>
+    /// <param name="cancellationToken">Cancellation token for client disconnect</param>
+    /// <response code="200">Streaming response initiated</response>
+    /// <response code="400">Invalid request</response>
     [HttpPost("stream")]
-    public async Task<IActionResult> StreamMessage(
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task StreamMessage(
         [FromBody] ChatRequestDto dto, 
         CancellationToken cancellationToken)
     {
-        // Get authenticated user ID
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? dto.UserId;
-        
-        _logger.LogInformation("Streaming chat request from user: {UserId}", userId);
-        
-        // Set SSE headers
-        Response.Headers.Append("Content-Type", "text/event-stream");
+        if (!ModelState.IsValid)
+        {
+            Response.StatusCode = 400;
+            await Response.WriteAsJsonAsync(new { error = "Invalid request" }, cancellationToken);
+            return;
+        }
+
+        // Configure SSE headers
+        Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");
         Response.Headers.Append("Connection", "keep-alive");
         Response.Headers.Append("X-Accel-Buffering", "no"); // Disable nginx buffering
         
         var request = dto.ToDomain();
-        request.UserId = userId;
+        _logger.LogInformation("Streaming chat request - UserId: {UserId}, SessionId: {SessionId}", 
+            request.UserId ?? "anonymous", request.SessionId ?? "new");
 
         try
         {
             await foreach (var chunk in _chatStreamService.HandleStreamAsync(request, cancellationToken))
             {
-                // Serialize chunk to JSON
                 var json = JsonSerializer.Serialize(chunk, new JsonSerializerOptions 
                 { 
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase 
                 });
                 
-                // Write SSE format: data: {...}\n\n
                 var sseData = $"data: {json}\n\n";
-                var bytes = Encoding.UTF8.GetBytes(sseData);
-                
-                await Response.Body.WriteAsync(bytes, cancellationToken);
+                await Response.WriteAsync(sseData, cancellationToken);
                 await Response.Body.FlushAsync(cancellationToken);
 
-                // Check if client disconnected
                 if (cancellationToken.IsCancellationRequested)
                 {
                     _logger.LogInformation("Client disconnected from stream");
                     break;
                 }
             }
-            
-            return new EmptyResult();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during streaming response");
             
-            // Send error event
             var errorJson = JsonSerializer.Serialize(new 
             { 
                 error = "An error occurred while streaming the response",
                 isComplete = true 
-            });
-            var errorData = $"data: {errorJson}\n\n";
-            var errorBytes = Encoding.UTF8.GetBytes(errorData);
+            }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
             
-            await Response.Body.WriteAsync(errorBytes, cancellationToken);
+            await Response.WriteAsync($"data: {errorJson}\n\n", cancellationToken);
             await Response.Body.FlushAsync(cancellationToken);
-            
-            return new EmptyResult();
         }
     }
 

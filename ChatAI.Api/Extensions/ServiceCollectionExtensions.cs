@@ -59,6 +59,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection("Resilience"));
         services.Configure<CacheOptions>(
             configuration.GetSection(CacheOptions.SectionName));
+        services.Configure<EmailOptions>(
+            configuration.GetSection(EmailOptions.SectionName));
 
         // Register ChatClient for chat completions
         services.AddSingleton(sp =>
@@ -88,14 +90,21 @@ public static class ServiceCollectionExtensions
             return azureClient.GetEmbeddingClient(config.EmbeddingDeploymentName);
         });
 
-        // Register Semantic Kernel (Infrastructure layer factory)
-        services.AddSingleton(sp =>
+        // Register Semantic Kernel (Scoped - to support scoped plugins)
+        services.AddScoped(sp =>
         {
             var config = configuration.GetSection(AzureOpenAIOptions.SectionName)
                 .Get<AzureOpenAIOptions>() 
                 ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
 
-            return ChatAI.Infrastructure.AI.SemanticKernelFactory.CreateKernel(config);
+            var kernel = ChatAI.Infrastructure.AI.SemanticKernelFactory.CreateKernel(config, sp);
+            
+            // Add plugins with scoped dependencies
+            kernel.Plugins.AddFromObject(
+                sp.GetRequiredService<ChatAI.Application.Plugins.EmailPlugin>(),
+                "EmailPlugin");
+            
+            return kernel;
         });
 
         return services;
@@ -127,15 +136,29 @@ public static class ServiceCollectionExtensions
         // Cache service (Singleton - shared cache)
         services.AddSingleton<ICacheService, ChatAI.Infrastructure.Services.MemoryCacheService>();
         
+        // Configuration service (Scoped - reads from database)
+        services.AddScoped<ChatAI.Application.Services.ConfigurationService>();
+        
         // Resilience policies (Singleton - shared policies)
         services.AddSingleton<ChatAI.Infrastructure.Resilience.ResiliencePolicies>();
         
         // Vector service (Singleton - shared connection pool)
         services.AddSingleton<IVectorService, QdrantVectorService>();
         
+        // Email service (Singleton - shared SMTP client)
+        services.AddSingleton<IEmailService, EmailService>();
+        
         // Repositories (Scoped - per request lifecycle)
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
+        services.AddScoped<IFeedbackRepository, FeedbackRepository>();
+        services.AddScoped<IConfigurationRepository, ConfigurationRepository>();
+
+        // Chat context (Scoped - per request, tracks session info)
+        services.AddScoped<ChatAI.Application.Services.ChatContext>();
+
+        // Email plugin (Scoped - needs ChatContext which is scoped)
+        services.AddScoped<ChatAI.Application.Plugins.EmailPlugin>();
 
         // Chat services - Using Semantic Kernel for AI orchestration
         services.AddScoped<IChatService, SemanticKernelChatService>();

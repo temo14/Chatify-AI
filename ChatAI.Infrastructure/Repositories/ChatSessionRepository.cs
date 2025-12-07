@@ -47,7 +47,7 @@ public class ChatSessionRepository : IChatSessionRepository
         _context.ChatSessions.Add(entity);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogInformation("Created session {SessionId} for user {UserId}", entity.Id, entity.UserId);
+        _logger.LogInformation("✅ Created session {SessionId} for user {UserId}", entity.Id, entity.UserId);
         return entity;
     }
 
@@ -67,7 +67,7 @@ public class ChatSessionRepository : IChatSessionRepository
         {
             _context.ChatSessions.Remove(session);
             await _context.SaveChangesAsync(ct);
-            _logger.LogInformation("Deleted session {SessionId}", id);
+            _logger.LogInformation("✅ Deleted session {SessionId}", id);
         }
     }
 
@@ -96,9 +96,24 @@ public class ChatSessionRepository : IChatSessionRepository
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)
             .OrderBy(m => m.Timestamp)
-            .ToListAsync(ct);
+            .ToListAsync(ct).ConfigureAwait(false);
         
         _logger.LogDebug("Loaded {Count} messages for session {SessionId}", messages.Count, sessionId);
+        return messages;
+    }
+
+    public async Task<IEnumerable<ChatMessage>> GetSessionMessagesAsync(string sessionId, int skip, int take, CancellationToken ct = default)
+    {
+        var messages = await _context.ChatMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == sessionId)
+            .OrderBy(m => m.Timestamp)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct).ConfigureAwait(false);
+        
+        _logger.LogDebug("Loaded {Count} messages (skip: {Skip}, take: {Take}) for session {SessionId}", 
+            messages.Count, skip, take, sessionId);
         return messages;
     }
 
@@ -133,6 +148,6 @@ public class ChatSessionRepository : IChatSessionRepository
         _context.ChatMessages.AddRange(messageList);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogInformation("Added {Count} messages in batch", messageList.Count);
+        _logger.LogInformation("✅ Added {Count} messages in batch", messageList.Count);
     }
 }

@@ -22,35 +22,49 @@ public class SemanticKernelChatService : IChatService
     private readonly Kernel _kernel;
     private readonly IChatCompletionService _chatCompletion;
     private readonly IChatSessionRepository _sessionRepository;
+    private readonly ChatContext _chatContext;
     private readonly ILogger<SemanticKernelChatService> _logger;
     private readonly ChatOptions _chatOptions;
+    private readonly ConfigurationService _configService;
 
     public SemanticKernelChatService(
         Kernel kernel,
         IChatSessionRepository sessionRepository,
+        ChatContext chatContext,
         ILogger<SemanticKernelChatService> logger,
-        IOptions<ChatOptions> chatOptions)
+        IOptions<ChatOptions> chatOptions,
+        ConfigurationService configService)
     {
         _kernel = kernel;
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
         _sessionRepository = sessionRepository;
+        _chatContext = chatContext;
         _logger = logger;
         _chatOptions = chatOptions.Value;
+        _configService = configService;
     }
 
     public async Task<ChatResponse> HandleAsync(ChatRequest request)
     {
-        _logger.LogInformation("🧠 Semantic Kernel processing request for user {UserId}", request.UserId);
-
         // Get or create session
         var session = await GetOrCreateSessionAsync(request);
+
+        // Set context for tool call logging
+        _chatContext.SessionId = session.Id;
+        _chatContext.UserId = request.UserId ?? "anonymous";
+        _chatContext.RequestTimestamp = DateTime.UtcNow;
+
+        _logger.LogInformation("🧠 [{Context}] Semantic Kernel processing request", _chatContext.GetContextInfo());
+
+        // Load AI settings from database configuration
+        var aiSettings = await _configService.GetAISettingsAsync();
 
         // Load conversation history
         var history = await LoadHistoryAsync(session.Id);
         var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
 
-        // Add system message
-        chatHistory.AddSystemMessage(_chatOptions.DefaultSystemPrompt);
+        // Add system message from configuration
+        chatHistory.AddSystemMessage(aiSettings.SystemPrompt);
 
         // Add historical messages
         foreach (var msg in history)
@@ -67,67 +81,44 @@ public class SemanticKernelChatService : IChatService
         // Save user message
         await SaveMessageAsync(session.Id, request.Message, MessageRole.User);
 
-        // Generate response using Semantic Kernel
-        // Note: Semantic Kernel 1.28.0 automatically invokes kernel functions
+        // Configure AI execution settings with automatic tool calling from database config
+#pragma warning disable SKEXP0001 // FunctionChoiceBehavior is experimental
         var settings = new AzureOpenAIPromptExecutionSettings
         {
-            Temperature = 0.7,
-            MaxTokens = 800,
-            TopP = 0.9,
-            FrequencyPenalty = 0.0,
-            PresencePenalty = 0.0
+            Temperature = aiSettings.Temperature,
+            MaxTokens = aiSettings.MaxTokens,
+            TopP = aiSettings.TopP,
+            FrequencyPenalty = aiSettings.FrequencyPenalty,
+            PresencePenalty = aiSettings.PresencePenalty,
+            FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
         };
+#pragma warning restore SKEXP0001
 
-        try
+        _logger.LogDebug("[{Context}] Invoking chat completion (tools enabled: {ToolsEnabled}, temp: {Temp}, max tokens: {MaxTokens})", 
+            _chatContext.GetContextInfo(), request.UseTools, settings.Temperature, settings.MaxTokens);
+
+        var result = await _chatCompletion.GetChatMessageContentAsync(
+            chatHistory,
+            settings,
+            _kernel);
+
+        var reply = result.Content ?? "I couldn't generate a response.";
+
+        // Save assistant response
+        await SaveMessageAsync(session.Id, reply, MessageRole.Assistant);
+
+        _logger.LogInformation("✅ [{Context}] Response generated - Length: {Length} chars", 
+            _chatContext.GetContextInfo(), reply.Length);
+
+        // Tool calls are logged directly in plugins with full session context
+        return new ChatResponse
         {
-            var result = await _chatCompletion.GetChatMessageContentAsync(
-                chatHistory,
-                settings,
-                _kernel);
-
-            var reply = result.Content ?? "I couldn't generate a response.";
-
-            // Save assistant response
-            await SaveMessageAsync(session.Id, reply, MessageRole.Assistant);
-
-            // Check if tools were called
-            var toolCalled = result.Metadata?.ContainsKey("ToolCalls") == true;
-            ToolCallInfo? toolInfo = null;
-
-            if (toolCalled && result.Metadata?.TryGetValue("ToolCalls", out var toolCalls) == true)
-            {
-                // Extract tool call information
-                var calls = toolCalls as IEnumerable<object> ?? Array.Empty<object>();
-                var firstCall = calls.FirstOrDefault();
-                
-                if (firstCall != null)
-                {
-                    toolInfo = new ToolCallInfo
-                    {
-                        Name = "KernelFunction",
-                        Arguments = firstCall.ToString() ?? "",
-                        Result = "Executed via Semantic Kernel"
-                    };
-                }
-            }
-
-            _logger.LogInformation("✅ Semantic Kernel response generated (length: {Length}, tools called: {ToolCalled})", 
-                reply.Length, toolCalled);
-
-            return new ChatResponse
-            {
-                Reply = reply,
-                SessionId = session.Id,
-                ToolCalled = toolCalled,
-                ToolCall = toolInfo,
-                ContextUsed = new List<ChatMessage>() // SK doesn't use RAG in this simplified version
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "❌ Error generating Semantic Kernel response");
-            throw;
-        }
+            Reply = reply,
+            SessionId = session.Id,
+            ToolCalled = false,  // Plugins handle their own logging
+            ToolCall = null,
+            ContextUsed = new List<ChatMessage>()
+        };
     }
 
     private async Task<ChatSession> GetOrCreateSessionAsync(ChatRequest request)

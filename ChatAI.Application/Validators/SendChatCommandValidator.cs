@@ -1,5 +1,7 @@
 using ChatAI.Application.Commands;
+using ChatAI.Application.Configuration;
 using FluentValidation;
+using Microsoft.Extensions.Options;
 
 namespace ChatAI.Application.Validators;
 
@@ -8,16 +10,17 @@ namespace ChatAI.Application.Validators;
 /// </summary>
 public class SendChatCommandValidator : AbstractValidator<SendChatCommand>
 {
-    public SendChatCommandValidator()
+    public SendChatCommandValidator(IOptions<ChatOptions> chatOptions)
     {
-        // User ID validation
+        var options = chatOptions.Value;
+        
+        // User ID validation (optional for anonymous users)
         RuleFor(x => x.UserId)
-            .NotEmpty()
-            .WithMessage("User ID is required")
             .MaximumLength(100)
             .WithMessage("User ID must not exceed 100 characters")
             .Matches(@"^[a-zA-Z0-9_-]+$")
-            .WithMessage("User ID must only contain alphanumeric characters, hyphens, and underscores");
+            .WithMessage("User ID must only contain alphanumeric characters, hyphens, and underscores")
+            .When(x => !string.IsNullOrWhiteSpace(x.UserId)); // Only validate if provided
 
         // Message validation
         RuleFor(x => x.Message)
@@ -25,8 +28,8 @@ public class SendChatCommandValidator : AbstractValidator<SendChatCommand>
             .WithMessage("Message is required")
             .MinimumLength(1)
             .WithMessage("Message must be at least 1 character long")
-            .MaximumLength(10000)
-            .WithMessage("Message must not exceed 10,000 characters");
+            .MaximumLength(options.MaxMessageLength)
+            .WithMessage($"Message must not exceed {options.MaxMessageLength:N0} characters");
 
         // Prompt injection detection
         RuleFor(x => x.Message)
