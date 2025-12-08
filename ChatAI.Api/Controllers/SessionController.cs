@@ -1,4 +1,5 @@
-using ChatAI.Application.Interfaces;
+using ChatAI.Application.Queries;
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 
@@ -11,14 +12,14 @@ namespace ChatAI.Api.Controllers;
 [Route("api/[controller]")]
 public class SessionController : ControllerBase
 {
-    private readonly IChatSessionRepository _sessionRepository;
+    private readonly ISender _sender;
     private readonly ILogger<SessionController> _logger;
 
     public SessionController(
-        IChatSessionRepository sessionRepository,
+        ISender sender,
         ILogger<SessionController> logger)
     {
-        _sessionRepository = sessionRepository;
+        _sender = sender;
         _logger = logger;
     }
 
@@ -30,31 +31,32 @@ public class SessionController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> ExportAsJson(string sessionId)
     {
-        _logger.LogInformation("Exporting session {SessionId} as JSON", sessionId);
-
-        var session = await _sessionRepository.GetByIdAsync(sessionId);
-        if (session == null)
+        var query = new ExportSessionQuery
         {
-            return NotFound(new { error = "Session not found" });
+            SessionId = sessionId,
+            Format = ExportFormat.Json
+        };
+
+        var result = await _sender.Send(query);
+
+        if (!result.Success)
+        {
+            return NotFound(new { error = result.ErrorMessage });
         }
-
-        var messages = await _sessionRepository.GetSessionMessagesAsync(sessionId, CancellationToken.None);
-
-        var messageList = messages.Select(m => new
-        {
-            role = m.Role.ToString(),
-            content = m.Content,
-            timestamp = m.Timestamp
-        }).ToList();
 
         var export = new
         {
-            sessionId = session.Id,
-            userId = session.UserId,
-            createdAt = session.CreatedAt,
-            lastActivityAt = session.LastActivityAt,
-            messageCount = messageList.Count,
-            messages = messageList
+            sessionId = result.Data!.SessionId,
+            userId = result.Data.UserId,
+            createdAt = result.Data.CreatedAt,
+            lastActivityAt = result.Data.LastActivityAt,
+            messageCount = result.Data.MessageCount,
+            messages = result.Data.Messages.Select(m => new
+            {
+                role = m.Role,
+                content = m.Content,
+                timestamp = m.Timestamp
+            })
         };
 
         return Ok(export);
@@ -68,20 +70,23 @@ public class SessionController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> ExportAsCsv(string sessionId)
     {
-        _logger.LogInformation("Exporting session {SessionId} as CSV", sessionId);
-
-        var session = await _sessionRepository.GetByIdAsync(sessionId);
-        if (session == null)
+        var query = new ExportSessionQuery
         {
-            return NotFound(new { error = "Session not found" });
-        }
+            SessionId = sessionId,
+            Format = ExportFormat.Csv
+        };
 
-        var messages = await _sessionRepository.GetSessionMessagesAsync(sessionId, CancellationToken.None);
+        var result = await _sender.Send(query);
+
+        if (!result.Success)
+        {
+            return NotFound(new { error = result.ErrorMessage });
+        }
 
         var csv = new StringBuilder();
         csv.AppendLine("Timestamp,Role,Content");
 
-        foreach (var message in messages)
+        foreach (var message in result.Data!.Messages)
         {
             var content = message.Content.Replace("\"", "\"\""); // Escape quotes
             csv.AppendLine($"\"{message.Timestamp:yyyy-MM-dd HH:mm:ss}\",\"{message.Role}\",\"{content}\"");
@@ -99,24 +104,22 @@ public class SessionController : ControllerBase
     [ProducesResponseType(404)]
     public async Task<IActionResult> GetSession(string sessionId)
     {
-        var session = await _sessionRepository.GetByIdAsync(sessionId);
-        if (session == null)
-        {
-            return NotFound(new { error = "Session not found" });
-        }
+        var query = new GetSessionQuery { SessionId = sessionId };
+        var result = await _sender.Send(query);
 
-        var messages = await _sessionRepository.GetSessionMessagesAsync(sessionId, CancellationToken.None);
-        var messageList = messages.ToList();
-        var count = messageList.Count;
+        if (!result.Success)
+        {
+            return NotFound(new { error = result.ErrorMessage });
+        }
 
         return Ok(new
         {
-            sessionId = session.Id,
-            userId = session.UserId,
-            isActive = session.IsActive,
-            createdAt = session.CreatedAt,
-            lastActivityAt = session.LastActivityAt,
-            messageCount = count
+            sessionId = result.Data!.SessionId,
+            userId = result.Data.UserId,
+            isActive = result.Data.IsActive,
+            createdAt = result.Data.CreatedAt,
+            lastActivityAt = result.Data.LastActivityAt,
+            messageCount = result.Data.MessageCount
         });
     }
 }

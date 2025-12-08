@@ -6,6 +6,7 @@ using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
@@ -16,7 +17,7 @@ namespace ChatAI.Tests.Unit.Services;
 
 public class ChatStreamServiceTests
 {
-    private readonly Mock<Kernel> _mockKernel;
+    private readonly Kernel _kernel;
     private readonly Mock<IChatSessionRepository> _mockSessionRepository;
     private readonly Mock<IKnowledgeRepository> _mockKnowledgeRepository;
     private readonly Mock<ICacheService> _mockCacheService;
@@ -24,18 +25,22 @@ public class ChatStreamServiceTests
     private readonly Mock<IOptions<ChatOptions>> _mockChatOptions;
     private readonly Mock<IOptions<CacheOptions>> _mockCacheOptions;
     private readonly Mock<IChatCompletionService> _mockChatCompletion;
-    private readonly Mock<ConfigurationService> _mockConfigService;
+    private readonly Mock<IConfigurationService> _mockConfigService;
     
     private readonly ChatStreamService _sut;
 
     public ChatStreamServiceTests()
     {
-        _mockKernel = new Mock<Kernel>();
+        // Create a real Kernel instance with mocked chat completion service
+        _mockChatCompletion = new Mock<IChatCompletionService>();
+        var kernelBuilder = Kernel.CreateBuilder();
+        kernelBuilder.Services.AddSingleton(_mockChatCompletion.Object);
+        _kernel = kernelBuilder.Build();
+
         _mockSessionRepository = new Mock<IChatSessionRepository>();
         _mockKnowledgeRepository = new Mock<IKnowledgeRepository>();
         _mockCacheService = new Mock<ICacheService>();
         _mockLogger = new Mock<ILogger<ChatStreamService>>();
-        _mockChatCompletion = new Mock<IChatCompletionService>();
 
         var chatOptions = new ChatOptions
         {
@@ -53,33 +58,22 @@ public class ChatStreamServiceTests
         _mockCacheOptions = new Mock<IOptions<CacheOptions>>();
         _mockCacheOptions.Setup(x => x.Value).Returns(cacheOptions);
 
-        // Setup mock ConfigurationService
-        _mockConfigService = new Mock<ConfigurationService>(
-            Mock.Of<IConfigurationRepository>(),
-            Mock.Of<ICacheService>(),
-            Mock.Of<ILogger<ConfigurationService>>()
-        );
-
-        // Setup default AI settings
-        var aiSettings = new AIChatSettings
-        {
-            SystemPrompt = "Test AI assistant",
-            Temperature = 0.7,
-            MaxTokens = 1500,
-            TopP = 0.95,
-            FrequencyPenalty = 0.3,
-            PresencePenalty = 0.2,
-            ModelName = "gpt-4o"
-        };
-        _mockConfigService.Setup(x => x.GetAISettingsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(aiSettings);
-
-        // Setup kernel to return chat completion service
-        _mockKernel.Setup(k => k.GetRequiredService<IChatCompletionService>())
-            .Returns(_mockChatCompletion.Object);
+        // Mock configuration service
+        _mockConfigService = new Mock<IConfigurationService>();
+        _mockConfigService.Setup(c => c.GetAISettingsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AIChatSettings
+            {
+                SystemPrompt = "Test AI assistant",
+                Temperature = 0.7,
+                MaxTokens = 1500,
+                TopP = 0.95,
+                FrequencyPenalty = 0.3,
+                PresencePenalty = 0.2,
+                ModelName = "gpt-4o"
+            });
 
         _sut = new ChatStreamService(
-            _mockKernel.Object,
+            _kernel,
             _mockSessionRepository.Object,
             _mockKnowledgeRepository.Object,
             _mockCacheService.Object,

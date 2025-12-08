@@ -8,7 +8,7 @@ namespace ChatAI.Application.Services;
 /// Service for reading and applying runtime configuration from database
 /// Allows real-time configuration changes without redeployment
 /// </summary>
-public class ConfigurationService
+public class ConfigurationService : IConfigurationService
 {
     private readonly IConfigurationRepository _configRepository;
     private readonly ILogger<ConfigurationService> _logger;

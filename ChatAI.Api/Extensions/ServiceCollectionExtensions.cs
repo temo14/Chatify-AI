@@ -137,7 +137,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICacheService, ChatAI.Infrastructure.Services.MemoryCacheService>();
         
         // Configuration service (Scoped - reads from database)
-        services.AddScoped<ChatAI.Application.Services.ConfigurationService>();
+        services.AddScoped<IConfigurationService, ChatAI.Application.Services.ConfigurationService>();
         
         // Resilience policies (Singleton - shared policies)
         services.AddSingleton<ChatAI.Infrastructure.Resilience.ResiliencePolicies>();

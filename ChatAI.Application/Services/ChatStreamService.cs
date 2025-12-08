@@ -27,7 +27,7 @@ public class ChatStreamService : IChatStreamService
     private readonly ILogger<ChatStreamService> _logger;
     private readonly ChatOptions _options;
     private readonly CacheOptions _cacheOptions;
-    private readonly ConfigurationService _configService;
+    private readonly IConfigurationService _configService;
 
     public ChatStreamService(
         Kernel kernel,
@@ -37,7 +37,7 @@ public class ChatStreamService : IChatStreamService
         ILogger<ChatStreamService> logger,
         IOptions<ChatOptions> options,
         IOptions<CacheOptions> cacheOptions,
-        ConfigurationService configService)
+        IConfigurationService configService)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
