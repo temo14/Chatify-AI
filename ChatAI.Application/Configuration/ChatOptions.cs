@@ -7,7 +7,9 @@ public class ChatOptions
 {
     public const string SectionName = "Chat";
 
-    public int MaxToolCalls { get; set; } = 5;
+    /// <summary>
+    /// Maximum conversation history to include in AI context
+    /// </summary>
     public int MaxConversationHistory { get; set; } = 20;
     
     /// <summary>

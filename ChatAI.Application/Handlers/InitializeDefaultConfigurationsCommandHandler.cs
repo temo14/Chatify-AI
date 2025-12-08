@@ -192,7 +192,7 @@ You represent a balance between autonomous problem-solving and knowing when to i
             new() { Id = Guid.NewGuid(), Key = "Branding.ThemeColor", Value = "#0066CC", DataType = "String", Category = "Branding", 
                 Description = "Primary brand color in hex format (e.g., #0066CC for blue)", IsActive = true, ModifiedBy = modifiedBy, 
                 ValidationRule = "^#[0-9A-Fa-f]{6}$", CreatedAt = now, UpdatedAt = now },
-            new() { Id = Guid.NewGuid(), Key = "Branding.SupportEmail", Value = "temo599922030@gmail.com", DataType = "String", Category = "Branding", 
+            new() { Id = Guid.NewGuid(), Key = "Branding.SupportEmail", Value = "t.baindurashvili.gm@gmail.com", DataType = "String", Category = "Branding", 
                 Description = "Email where AI sends support requests", IsActive = true, ModifiedBy = modifiedBy, 
                 ValidationRule = "^[^@]+@[^@]+\\.[^@]+$", CreatedAt = now, UpdatedAt = now },
             new() { Id = Guid.NewGuid(), Key = "Branding.LogoUrl", Value = "", DataType = "String", Category = "Branding", 

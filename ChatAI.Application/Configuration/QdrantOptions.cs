@@ -26,9 +26,4 @@ public class QdrantOptions
     /// API key for Qdrant (if using Qdrant Cloud)
     /// </summary>
     public string? ApiKey { get; set; }
-    
-    /// <summary>
-    /// Default score threshold for semantic search (0.0 to 1.0)
-    /// </summary>
-    public double DefaultScoreThreshold { get; set; } = 0.7;
 }

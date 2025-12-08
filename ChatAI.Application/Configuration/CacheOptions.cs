@@ -26,14 +26,4 @@ public class CacheOptions
     /// Embedding cache expiration in hours (embeddings rarely change)
     /// </summary>
     public int EmbeddingExpirationHours { get; set; } = 24;
-
-    /// <summary>
-    /// Tool result cache expiration in minutes
-    /// </summary>
-    public int ToolResultExpirationMinutes { get; set; } = 15;
-
-    /// <summary>
-    /// Maximum number of cached items (memory limit)
-    /// </summary>
-    public int MaxCachedItems { get; set; } = 10000;
 }
