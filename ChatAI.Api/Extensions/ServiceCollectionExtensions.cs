@@ -7,8 +7,12 @@ using ChatAI.Infrastructure.HealthChecks;
 using ChatAI.Infrastructure.Repositories;
 using ChatAI.Infrastructure.Services;
 using FluentValidation;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Microsoft.SemanticKernel;
 using Qdrant.Client;
@@ -61,6 +65,8 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(CacheOptions.SectionName));
         services.Configure<EmailOptions>(
             configuration.GetSection(EmailOptions.SectionName));
+        services.Configure<JwtOptions>(
+            configuration.GetSection(JwtOptions.SectionName));
 
         // Register ChatClient for chat completions
         services.AddSingleton(sp =>
@@ -150,6 +156,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IKnowledgeRepository, KnowledgeRepository>();
         services.AddScoped<IFeedbackRepository, FeedbackRepository>();
         services.AddScoped<IConfigurationRepository, ConfigurationRepository>();
+        services.AddScoped<IAdminUserRepository, ChatAI.Infrastructure.Repositories.AdminUserRepository>();
+        services.AddScoped<IApiKeyRepository, ChatAI.Infrastructure.Repositories.ApiKeyRepository>();
+        
+        // Authentication services
+        services.AddScoped<IAuthService, ChatAI.Application.Services.AuthService>();
+        services.AddSingleton<IApiKeyService, ChatAI.Application.Services.ApiKeyService>();
 
         // Chat context (Scoped - per request, tracks session info)
         services.AddScoped<ChatAI.Application.Services.ChatContext>();
@@ -224,6 +236,97 @@ public static class ServiceCollectionExtensions
             });
         });
         
+        return services;
+    }
+    
+    /// <summary>
+    /// Add authentication and authorization services (JWT + API Key + Cookie)
+    /// </summary>
+    public static IServiceCollection AddAuthenticationServices(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        var jwtConfig = configuration.GetSection(JwtOptions.SectionName)
+            .Get<JwtOptions>() 
+            ?? throw new InvalidOperationException("JWT configuration is missing");
+        
+        var key = System.Text.Encoding.UTF8.GetBytes(jwtConfig.Secret);
+        
+        services.AddAuthentication(options =>
+        {
+            // Default scheme for web/API
+            options.DefaultAuthenticateScheme = "MultiScheme";
+            options.DefaultChallengeScheme = "MultiScheme";
+        })
+        .AddJwtBearer("JwtBearer", options =>
+        {
+            options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
+                ValidateIssuer = true,
+                ValidIssuer = jwtConfig.Issuer,
+                ValidateAudience = true,
+                ValidAudience = jwtConfig.Audience,
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero
+            };
+        })
+        .AddCookie("Cookie", options =>
+        {
+            options.LoginPath = "/admin-login.html";
+            options.LogoutPath = "/api/auth/logout";
+            options.ExpireTimeSpan = TimeSpan.FromMinutes(jwtConfig.ExpirationMinutes);
+            options.SlidingExpiration = true;
+            options.Cookie.HttpOnly = true;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+            options.Cookie.Name = "ChatifyAI.Auth";
+        })
+        .AddScheme<AuthenticationSchemeOptions, ChatAI.Infrastructure.Services.ApiKeyAuthenticationHandler>("ApiKey", null)
+        .AddPolicyScheme("MultiScheme", "Multi-scheme authentication", options =>
+        {
+            options.ForwardDefaultSelector = context =>
+            {
+                // Check for API key first
+                if (context.Request.Headers.ContainsKey("X-API-Key"))
+                {
+                    return "ApiKey";
+                }
+                
+                // Check for JWT token
+                var authHeader = context.Request.Headers["Authorization"].ToString();
+                if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "JwtBearer";
+                }
+                
+                // Default to cookie for browser requests
+                return "Cookie";
+            };
+        });
+        
+        // Add authorization policies
+        services.AddAuthorization(options =>
+        {
+            options.AddPolicy("Admin", policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireRole("Admin");
+            });
+            
+            options.AddPolicy("Client", policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireRole("Client");
+            });
+            
+            options.AddPolicy("AdminOrClient", policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireRole("Admin", "Client");
+            });
+        });
+
         return services;
     }
 }

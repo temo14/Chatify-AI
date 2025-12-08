@@ -2,6 +2,7 @@ using ChatAI.Api.DTOs;
 using ChatAI.Application.Commands;
 using ChatAI.Application.Queries;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatAI.Api.Controllers;
@@ -13,6 +14,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/admin/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "Admin")]
 public class ConfigurationController : ControllerBase
 {
     private readonly ISender _sender;

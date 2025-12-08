@@ -25,12 +25,30 @@ try
     builder.Services.AddDatabaseServices(builder.Configuration, builder.Environment);
     builder.Services.AddAzureOpenAIServices(builder.Configuration);
     builder.Services.AddApplicationServices();
+    builder.Services.AddAuthenticationServices(builder.Configuration);
     builder.Services.AddHealthCheckServices(builder.Configuration);
     builder.Services.AddSwaggerDocumentation();
 
     var app = builder.Build();
 
     await app.UseDatabaseMigrationsAsync(app.Environment);
+    
+    // Initialize default admin user
+    using (var scope = app.Services.CreateScope())
+    {
+        var mediator = scope.ServiceProvider.GetRequiredService<MediatR.IMediator>();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        
+        var defaultUsername = configuration["ADMIN__USERNAME"] ?? "admin";
+        var defaultPassword = configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
+        
+        await mediator.Send(new ChatAI.Application.Commands.InitializeDefaultAdminCommand
+        {
+            Username = defaultUsername,
+            Password = defaultPassword,
+            Email = null
+        });
+    }
 
     // Global exception handler - must be first in pipeline
     app.UseGlobalExceptionHandler();
@@ -42,6 +60,9 @@ try
     app.UseStaticFiles();
     
     app.UseSwaggerDocumentation(app.Environment);
+    
+    // Authentication and authorization
+    app.UseAuthentication();
     app.UseAuthorization();
     
     // Map health check endpoints

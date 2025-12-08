@@ -3,6 +3,7 @@ using ChatAI.Application.Commands;
 using ChatAI.Application.Exceptions;
 using ChatAI.Application.Queries;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatAI.Api.Controllers;
@@ -14,6 +15,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize(Policy = "Admin")]
 public class KnowledgeController : ControllerBase
 {
     private readonly ISender _sender;

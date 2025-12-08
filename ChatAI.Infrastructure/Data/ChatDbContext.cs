@@ -23,6 +23,10 @@ public class ChatDbContext : DbContext
     // Feedback and configuration
     public DbSet<MessageFeedback> MessageFeedbacks { get; set; } = null!;
     public DbSet<AdminConfiguration> AdminConfigurations { get; set; } = null!;
+    
+    // Authentication
+    public DbSet<AdminUser> AdminUsers { get; set; } = null!;
+    public DbSet<ApiKey> ApiKeys { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -163,6 +167,56 @@ public class ChatDbContext : DbContext
             entity.HasIndex(e => e.Key).IsUnique().HasDatabaseName("IX_AdminConfigurations_Key");
             entity.HasIndex(e => e.Category).HasDatabaseName("IX_AdminConfigurations_Category");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_AdminConfigurations_IsActive");
+        });
+        
+        // ===== ADMIN USER =====
+        modelBuilder.Entity<AdminUser>(entity =>
+        {
+            entity.ToTable("AdminUsers");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.Username).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.PasswordHash).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.Email).HasMaxLength(200);
+            entity.Property(e => e.FullName).HasMaxLength(200);
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.LastLoginAt);
+            entity.Property(e => e.FailedLoginAttempts).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.LockedUntil);
+            
+            // Unique username
+            entity.HasIndex(e => e.Username).IsUnique().HasDatabaseName("IX_AdminUsers_Username");
+            entity.HasIndex(e => e.Email).HasDatabaseName("IX_AdminUsers_Email");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_AdminUsers_IsActive");
+        });
+        
+        // ===== API KEY =====
+        modelBuilder.Entity<ApiKey>(entity =>
+        {
+            entity.ToTable("ApiKeys");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.KeyHash).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.ClientName).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.ClientId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.RateLimitPerMinute).IsRequired().HasDefaultValue(20);
+            entity.Property(e => e.RateLimitPerDay).IsRequired().HasDefaultValue(1000);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.ExpiresAt);
+            entity.Property(e => e.LastUsedAt);
+            entity.Property(e => e.UsageCount).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.CreatedBy);
+            
+            // Indexes for lookups
+            entity.HasIndex(e => e.KeyHash).IsUnique().HasDatabaseName("IX_ApiKeys_KeyHash");
+            entity.HasIndex(e => e.ClientId).HasDatabaseName("IX_ApiKeys_ClientId");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_ApiKeys_IsActive");
+            entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_ApiKeys_CreatedAt");
         });
     }
 }
