@@ -72,4 +72,12 @@ public static class ApplicationBuilderExtensions
 
         return app;
     }
+
+    /// <summary>
+    /// Enable global exception handling middleware
+    /// </summary>
+    public static IApplicationBuilder UseGlobalExceptionHandler(this IApplicationBuilder app)
+    {
+        return app.UseMiddleware<ChatAI.Api.Middleware.GlobalExceptionMiddleware>();
+    }
 }

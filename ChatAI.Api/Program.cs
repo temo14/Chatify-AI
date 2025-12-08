@@ -1,5 +1,4 @@
 using ChatAI.Api.Extensions;
-using ChatAI.Api.Middleware;
 using AspNetCoreRateLimit;
 using Serilog;
 
@@ -16,11 +15,7 @@ try
     builder.Host.UseSerilog();
 
     // Add memory cache and rate limiting
-    builder.Services.AddMemoryCache(options =>
-    {
-        // Don't set SizeLimit to avoid cache entry size requirement
-        options.CompactionPercentage = 0.25;
-    });
+    builder.Services.AddMemoryCache();
     builder.Services.Configure<AspNetCoreRateLimit.IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
     builder.Services.AddInMemoryRateLimiting();
     builder.Services.AddSingleton<AspNetCoreRateLimit.IRateLimitConfiguration, AspNetCoreRateLimit.RateLimitConfiguration>();
@@ -40,8 +35,7 @@ try
     // Global exception handler - must be first in pipeline
     app.UseGlobalExceptionHandler();
 
-    // Temporarily disable rate limiting for testing
-    // app.UseIpRateLimiting();
+    app.UseIpRateLimiting();
     app.UseHttpsRedirection();
     
     // Serve static files (HTML, CSS, JS) from wwwroot folder

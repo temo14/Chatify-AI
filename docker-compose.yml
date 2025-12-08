@@ -62,7 +62,6 @@ services:
       - AzureOpenAI__Temperature=${AZURE_OPENAI_TEMPERATURE:-0.7}
       - Chat__MaxToolCalls=${CHAT_MAX_TOOL_CALLS:-5}
       - Chat__MaxConversationHistory=${CHAT_MAX_HISTORY:-20}
-      - Chat__DefaultSystemPrompt=${CHAT_SYSTEM_PROMPT:-You are a helpful AI assistant with access to various tools and a knowledge base.}
       - Qdrant__Endpoint=http://qdrant:6333
       - Qdrant__CollectionName=${QDRANT_COLLECTION:-knowledge-base}
       - Qdrant__VectorSize=${QDRANT_VECTOR_SIZE:-1536}

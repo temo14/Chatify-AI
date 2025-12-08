@@ -3,6 +3,7 @@ using ChatAI.Application.Exceptions;
 using ChatAI.Application.Interfaces;
 using ChatAI.Application.Models.Request;
 using ChatAI.Application.Models.Response;
+using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -98,8 +99,12 @@ public class ChatStreamService : IChatStreamService
         // 3. Build conversation history
         var chatHistory = await BuildConversationHistoryAsync(request, session.Id, relevantKnowledge);
 
-        // 4. Load AI settings from database configuration
-        var aiSettings = await _configService.GetAISettingsAsync(cancellationToken);
+        // 4. Load AI settings from database configuration (cached)
+        var cacheKey = CacheKeyBuilder.AISettings();
+        var aiSettings = await _cacheService.GetOrCreateAsync(
+            cacheKey,
+            async () => await _configService.GetAISettingsAsync(cancellationToken).ConfigureAwait(false),
+            TimeSpan.FromMinutes(10)).ConfigureAwait(false);
 
         // 5. Stream AI response using Semantic Kernel with dynamic configuration
         var settings = new AzureOpenAIPromptExecutionSettings
@@ -211,14 +216,21 @@ public class ChatStreamService : IChatStreamService
     {
         var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
 
+        // Load AI settings to get system prompt from database (cached)
+        var cacheKey = CacheKeyBuilder.AISettings();
+        var aiSettings = await _cacheService.GetOrCreateAsync(
+            cacheKey,
+            async () => await _configService.GetAISettingsAsync().ConfigureAwait(false),
+            TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+        
         // System prompt with RAG
-        var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs);
+        var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs, aiSettings.SystemPrompt);
         chatHistory.AddSystemMessage(systemPrompt);
 
         // Load previous messages with pagination (only load what we need)
-        var cacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
+        var historyCacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
         var recentMessages = await _cacheService.GetOrCreateAsync(
-            cacheKey,
+            historyCacheKey,
             async () => await _sessionRepository.GetSessionMessagesAsync(
                 sessionId, 
                 skip: 0, 
@@ -240,9 +252,9 @@ public class ChatStreamService : IChatStreamService
         return chatHistory;
     }
 
-    private string BuildSystemPromptWithRAG(List<KnowledgeDocument> knowledgeDocs)
+    private string BuildSystemPromptWithRAG(List<KnowledgeDocument> knowledgeDocs, string systemPrompt)
     {
-        var prompt = _options.DefaultSystemPrompt;
+        var prompt = systemPrompt;
 
         if (knowledgeDocs.Any())
         {

@@ -44,7 +44,6 @@ public class ChatStreamServiceTests
 
         var chatOptions = new ChatOptions
         {
-            DefaultSystemPrompt = "Test prompt",
             MaxConversationHistory = 10,
             RagTopK = 3
         };

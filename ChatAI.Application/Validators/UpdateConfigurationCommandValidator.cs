@@ -23,8 +23,8 @@ public class UpdateConfigurationCommandValidator : AbstractValidator<UpdateConfi
         RuleFor(x => x.Value)
             .NotNull()
             .WithMessage("Value is required")
-            .MaximumLength(5000)
-            .WithMessage("Value must not exceed 5000 characters");
+            .MaximumLength(50000)
+            .WithMessage("Value must not exceed 50000 characters");
 
         RuleFor(x => x.DataType)
             .Must(dt => AllowedDataTypes.Contains(dt))

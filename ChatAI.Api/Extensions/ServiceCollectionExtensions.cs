@@ -127,11 +127,8 @@ public static class ServiceCollectionExtensions
         // FluentValidation validators
         services.AddValidatorsFromAssembly(typeof(SemanticKernelChatService).Assembly);
         
-        // Memory cache
-        services.AddMemoryCache(options =>
-        {
-            options.SizeLimit = 10000; // Max 10,000 cached items
-        });
+        // Memory cache (no SizeLimit to avoid conflicts with AspNetCoreRateLimit)
+        services.AddMemoryCache();
         
         // Cache service (Singleton - shared cache)
         services.AddSingleton<ICacheService, ChatAI.Infrastructure.Services.MemoryCacheService>();

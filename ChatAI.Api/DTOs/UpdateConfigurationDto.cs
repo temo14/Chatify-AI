@@ -7,9 +7,8 @@ namespace ChatAI.Api.DTOs;
 /// </summary>
 public class UpdateConfigurationDto
 {
-    [Required]
     [MaxLength(200)]
-    public string Key { get; set; } = string.Empty;
+    public string? Key { get; set; }
 
     [Required]
     public string Value { get; set; } = string.Empty;

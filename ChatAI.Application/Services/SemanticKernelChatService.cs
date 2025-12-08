@@ -2,6 +2,7 @@ using ChatAI.Application.Configuration;
 using ChatAI.Application.Interfaces;
 using ChatAI.Application.Models.Request;
 using ChatAI.Application.Models.Response;
+using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
 using Microsoft.Extensions.Logging;
@@ -25,7 +26,7 @@ public class SemanticKernelChatService : IChatService
     private readonly ChatContext _chatContext;
     private readonly ILogger<SemanticKernelChatService> _logger;
     private readonly ChatOptions _chatOptions;
-    private readonly ConfigurationService _configService;
+    private readonly IConfigurationService _configService;
 
     public SemanticKernelChatService(
         Kernel kernel,
@@ -33,7 +34,7 @@ public class SemanticKernelChatService : IChatService
         ChatContext chatContext,
         ILogger<SemanticKernelChatService> logger,
         IOptions<ChatOptions> chatOptions,
-        ConfigurationService configService)
+        IConfigurationService configService)
     {
         _kernel = kernel;
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();

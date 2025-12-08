@@ -9,7 +9,6 @@ public class ChatOptions
 
     public int MaxToolCalls { get; set; } = 5;
     public int MaxConversationHistory { get; set; } = 20;
-    public string DefaultSystemPrompt { get; set; } = "You are a helpful AI assistant.";
     
     /// <summary>
     /// Maximum message length in characters

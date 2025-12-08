@@ -1,5 +1,6 @@
 using ChatAI.Application.Commands;
 using ChatAI.Application.Interfaces;
+using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using MediatR;
 using Microsoft.Extensions.Logging;
@@ -12,13 +13,16 @@ namespace ChatAI.Application.Handlers;
 public class UpdateConfigurationCommandHandler : IRequestHandler<UpdateConfigurationCommand, Guid>
 {
     private readonly IConfigurationRepository _configurationRepository;
+    private readonly ICacheService _cacheService;
     private readonly ILogger<UpdateConfigurationCommandHandler> _logger;
 
     public UpdateConfigurationCommandHandler(
         IConfigurationRepository configurationRepository,
+        ICacheService cacheService,
         ILogger<UpdateConfigurationCommandHandler> logger)
     {
         _configurationRepository = configurationRepository ?? throw new ArgumentNullException(nameof(configurationRepository));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -42,6 +46,14 @@ public class UpdateConfigurationCommandHandler : IRequestHandler<UpdateConfigura
 
             await _configurationRepository.UpdateAsync(existing, cancellationToken);
 
+            // Invalidate AI settings cache if AI configuration is updated
+            if (command.Key.StartsWith("AI.", StringComparison.OrdinalIgnoreCase))
+            {
+                var aiSettingsCacheKey = CacheKeyBuilder.AISettings();
+                _cacheService.Remove(aiSettingsCacheKey);
+                _logger.LogInformation("🗑️ Invalidated AI settings cache after updating '{Key}'", command.Key);
+            }
+
             _logger.LogInformation("✅ Updated configuration '{Key}'", command.Key);
             return existing.Id;
         }
@@ -63,6 +75,14 @@ public class UpdateConfigurationCommandHandler : IRequestHandler<UpdateConfigura
         };
 
         var result = await _configurationRepository.AddAsync(config, cancellationToken);
+
+        // Invalidate AI settings cache if AI configuration is created
+        if (command.Key.StartsWith("AI.", StringComparison.OrdinalIgnoreCase))
+        {
+            var aiSettingsCacheKey = CacheKeyBuilder.AISettings();
+            _cacheService.Remove(aiSettingsCacheKey);
+            _logger.LogInformation("🗑️ Invalidated AI settings cache after creating '{Key}'", command.Key);
+        }
 
         _logger.LogInformation("✅ Created configuration '{Key}'", command.Key);
         return result.Id;

@@ -46,6 +46,14 @@ public static class CacheKeyBuilder
     }
 
     /// <summary>
+    /// Generate cache key for AI settings
+    /// </summary>
+    public static string AISettings()
+    {
+        return $"{Prefix}:config:ai-settings";
+    }
+
+    /// <summary>
     /// Compute SHA256 hash of input string for cache key generation
     /// </summary>
     private static string ComputeHash(string input)
