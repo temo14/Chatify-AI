@@ -1,7 +1,7 @@
 using Azure;
 using ChatAI.Application.Configuration;
-using ChatAI.Application.Interfaces;
-using ChatAI.Application.Services;
+using ChatAI.Domain.Interfaces.Repositories;
+using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Infrastructure.Data;
 using ChatAI.Infrastructure.HealthChecks;
 using ChatAI.Infrastructure.Repositories;
@@ -11,11 +11,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Tokens;
-using Microsoft.OpenApi;
 using Microsoft.SemanticKernel;
-using Qdrant.Client;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
 
 namespace ChatAI.Api.Extensions;
@@ -140,7 +136,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICacheService, ChatAI.Infrastructure.Services.MemoryCacheService>();
         
         // Configuration service (Scoped - reads from database)
-        services.AddScoped<IConfigurationService, ChatAI.Application.Services.ConfigurationService>();
+        services.AddScoped<IConfigurationService, ChatAI.Infrastructure.Services.ConfigurationService>();
         
         // Resilience policies (Singleton - shared policies)
         services.AddSingleton<ChatAI.Infrastructure.Resilience.ResiliencePolicies>();
@@ -160,8 +156,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApiKeyRepository, ChatAI.Infrastructure.Repositories.ApiKeyRepository>();
         
         // Authentication services
-        services.AddScoped<IAuthService, ChatAI.Application.Services.AuthService>();
-        services.AddSingleton<IApiKeyService, ChatAI.Application.Services.ApiKeyService>();
+        services.AddScoped<IAuthService, ChatAI.Infrastructure.Services.AuthService>();
+        services.AddSingleton<IApiKeyService, ChatAI.Infrastructure.Services.ApiKeyService>();
 
         // Chat context (Scoped - per request, tracks session info)
         services.AddScoped<ChatAI.Application.Services.ChatContext>();
@@ -170,8 +166,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ChatAI.Application.Plugins.EmailPlugin>();
 
         // Chat services - Using Semantic Kernel for AI orchestration
-        services.AddScoped<IChatService, SemanticKernelChatService>();
-        services.AddScoped<IChatStreamService, ChatStreamService>();
+        services.AddScoped<IChatService, ChatAI.Infrastructure.Services.SemanticKernelChatService>();
+        services.AddScoped<IChatStreamService, ChatAI.Infrastructure.Services.ChatStreamService>();
 
         return services;
     }
@@ -258,7 +254,7 @@ public static class ServiceCollectionExtensions
             options.DefaultAuthenticateScheme = "MultiScheme";
             options.DefaultChallengeScheme = "MultiScheme";
         })
-        .AddJwtBearer("JwtBearer", options =>
+        .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
         {
             options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
             {
@@ -272,7 +268,7 @@ public static class ServiceCollectionExtensions
                 ClockSkew = TimeSpan.Zero
             };
         })
-        .AddCookie("Cookie", options =>
+        .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
         {
             options.LoginPath = "/admin-login.html";
             options.LogoutPath = "/api/auth/logout";
@@ -297,11 +293,11 @@ public static class ServiceCollectionExtensions
                 var authHeader = context.Request.Headers["Authorization"].ToString();
                 if (authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
                 {
-                    return "JwtBearer";
+                    return JwtBearerDefaults.AuthenticationScheme;
                 }
                 
                 // Default to cookie for browser requests
-                return "Cookie";
+                return CookieAuthenticationDefaults.AuthenticationScheme;
             };
         });
         

@@ -1,5 +1,6 @@
 using ChatAI.Application.Configuration;
-using ChatAI.Application.Interfaces;
+using ChatAI.Domain.Interfaces.Repositories;
+using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Infrastructure.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

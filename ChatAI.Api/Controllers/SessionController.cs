@@ -1,4 +1,5 @@
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Session.ExportSession;
+using ChatAI.Application.Features.Session.GetSession;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;

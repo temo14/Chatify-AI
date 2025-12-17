@@ -1,4 +1,4 @@
-using ChatAI.Application.Interfaces;
+using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 

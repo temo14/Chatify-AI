@@ -1,6 +1,8 @@
-using ChatAI.Application.Commands;
-using ChatAI.Application.DTOs;
-using ChatAI.Application.Queries;
+using ChatAI.Api.DTOs;
+using ChatAI.Application.Features.Auth.CreateApiKey;
+using ChatAI.Application.Features.Auth.GetApiKeys;
+using ChatAI.Application.Features.Auth.Login;
+using ChatAI.Application.Features.Auth.RevokeApiKey;
 using MediatR;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -37,14 +39,24 @@ public class AuthController : ControllerBase
             RememberMe = request.RememberMe
         };
 
-        var response = await _mediator.Send(command);
+        var result = await _mediator.Send(command);
+
+        // Map domain result to response DTO
+        var response = new LoginResponseDto
+        {
+            Username = result.Username,
+            FullName = result.FullName,
+            Email = result.Email,
+            Token = result.Token,
+            ExpiresAt = result.ExpiresAt
+        };
 
         // Set authentication cookie for browser-based access
         var claims = new[]
         {
-            new Claim(ClaimTypes.NameIdentifier, response.Username),
-            new Claim(ClaimTypes.Name, response.Username),
-            new Claim(ClaimTypes.Email, response.Email ?? ""),
+            new Claim(ClaimTypes.NameIdentifier, result.Username),
+            new Claim(ClaimTypes.Name, result.Username),
+            new Claim(ClaimTypes.Email, result.Email ?? ""),
             new Claim(ClaimTypes.Role, "Admin")
         };
 
@@ -57,7 +69,7 @@ public class AuthController : ControllerBase
             new AuthenticationProperties
             {
                 IsPersistent = request.RememberMe,
-                ExpiresUtc = response.ExpiresAt
+                ExpiresUtc = result.ExpiresAt
             });
 
         _logger.LogInformation("Admin logged in successfully: {Username}", request.Username);
@@ -113,7 +125,24 @@ public class AuthController : ControllerBase
             CreatedBy = Guid.Empty // TODO: Get actual admin user ID from claims
         };
 
-        var response = await _mediator.Send(command);
+        var result = await _mediator.Send(command);
+
+        // Map domain result to response DTO
+        var response = new ApiKeyResponseDto
+        {
+            Id = result.Id,
+            ClientName = result.ClientName,
+            ClientId = result.ClientId,
+            Description = result.Description,
+            IsActive = result.IsActive,
+            RateLimitPerMinute = result.RateLimitPerMinute,
+            RateLimitPerDay = result.RateLimitPerDay,
+            CreatedAt = result.CreatedAt,
+            ExpiresAt = result.ExpiresAt,
+            LastUsedAt = result.LastUsedAt,
+            UsageCount = result.UsageCount,
+            ApiKey = result.ApiKey
+        };
 
         _logger.LogInformation("API key created by {Username} for client: {ClientName}", username, request.ClientName);
 
@@ -128,7 +157,25 @@ public class AuthController : ControllerBase
     public async Task<ActionResult<List<ApiKeyResponseDto>>> GetApiKeys([FromQuery] bool includeInactive = false)
     {
         var query = new GetApiKeysQuery { IncludeInactive = includeInactive };
-        var response = await _mediator.Send(query);
+        var apiKeys = await _mediator.Send(query);
+        
+        // Map domain entities to response DTOs
+        var response = apiKeys.Select(k => new ApiKeyResponseDto
+        {
+            Id = k.Id,
+            ClientName = k.ClientName,
+            ClientId = k.ClientId,
+            Description = k.Description,
+            IsActive = k.IsActive,
+            RateLimitPerMinute = k.RateLimitPerMinute,
+            RateLimitPerDay = k.RateLimitPerDay,
+            CreatedAt = k.CreatedAt,
+            ExpiresAt = k.ExpiresAt,
+            LastUsedAt = k.LastUsedAt,
+            UsageCount = k.UsageCount,
+            ApiKey = null // Never return plain key after creation
+        }).ToList();
+        
         return Ok(response);
     }
 

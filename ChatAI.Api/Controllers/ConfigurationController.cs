@@ -1,6 +1,10 @@
 using ChatAI.Api.DTOs;
-using ChatAI.Application.Commands;
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Configuration.DeleteConfiguration;
+using ChatAI.Application.Features.Configuration.GetConfiguration;
+using ChatAI.Application.Features.Configuration.GetConfigurationCategories;
+using ChatAI.Application.Features.Configuration.GetConfigurationList;
+using ChatAI.Application.Features.Configuration.InitializeDefaultConfigurations;
+using ChatAI.Application.Features.Configuration.UpdateConfiguration;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

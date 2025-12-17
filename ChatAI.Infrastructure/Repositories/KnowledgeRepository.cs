@@ -1,6 +1,8 @@
 using ChatAI.Application.Configuration;
-using ChatAI.Application.Interfaces;
 using ChatAI.Application.Services;
+using ChatAI.Domain.Interfaces.Repositories;
+using ChatAI.Domain.Interfaces.Services;
+using ChatAI.Domain.Models;
 using ChatAI.Domain.Entities;
 using ChatAI.Infrastructure.Data;
 using ChatAI.Infrastructure.Services;

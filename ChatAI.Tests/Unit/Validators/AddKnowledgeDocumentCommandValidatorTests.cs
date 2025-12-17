@@ -1,5 +1,4 @@
-using ChatAI.Application.Commands;
-using ChatAI.Application.Validators;
+using ChatAI.Application.Features.Knowledge.AddDocument;
 using FluentValidation.TestHelper;
 
 namespace ChatAI.Tests.Unit.Validators;

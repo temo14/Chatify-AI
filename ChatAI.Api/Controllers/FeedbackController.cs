@@ -1,6 +1,9 @@
 using ChatAI.Api.DTOs;
-using ChatAI.Application.Commands;
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Feedback.DeleteFeedback;
+using ChatAI.Application.Features.Feedback.GetFeedback;
+using ChatAI.Application.Features.Feedback.GetFeedbackList;
+using ChatAI.Application.Features.Feedback.GetFeedbackStats;
+using ChatAI.Application.Features.Feedback.SubmitFeedback;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 

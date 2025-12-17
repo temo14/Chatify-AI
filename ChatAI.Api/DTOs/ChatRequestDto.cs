@@ -1,4 +1,4 @@
-﻿using ChatAI.Application.Models.Request;
+using ChatAI.Domain.Models.Request;
 using System.ComponentModel.DataAnnotations;
 
 namespace ChatAI.Api.DTOs;

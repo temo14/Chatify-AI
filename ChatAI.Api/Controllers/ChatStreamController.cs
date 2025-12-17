@@ -1,5 +1,5 @@
 using ChatAI.Api.DTOs;
-using ChatAI.Application.Interfaces;
+using ChatAI.Domain.Interfaces.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 

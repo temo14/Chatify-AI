@@ -1,7 +1,12 @@
 using ChatAI.Api.DTOs.Knowledge;
-using ChatAI.Application.Commands;
 using ChatAI.Application.Exceptions;
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Knowledge.AddDocument;
+using ChatAI.Application.Features.Knowledge.DeleteDocument;
+using ChatAI.Application.Features.Knowledge.GetDocument;
+using ChatAI.Application.Features.Knowledge.GetDocuments;
+using ChatAI.Application.Features.Knowledge.LoadDocumentsToQdrant;
+using ChatAI.Application.Features.Knowledge.SearchKnowledge;
+using ChatAI.Application.Features.Knowledge.UpdateDocument;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

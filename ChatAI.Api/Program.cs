@@ -1,5 +1,6 @@
-using ChatAI.Api.Extensions;
 using AspNetCoreRateLimit;
+using ChatAI.Api.Extensions;
+using ChatAI.Application.Features.Auth.InitializeDefaultAdmin;
 using Serilog;
 
 // Configure Serilog before building the application
@@ -42,7 +43,7 @@ try
         var defaultUsername = configuration["ADMIN__USERNAME"] ?? "admin";
         var defaultPassword = configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
         
-        await mediator.Send(new ChatAI.Application.Commands.InitializeDefaultAdminCommand
+        await mediator.Send(new InitializeDefaultAdminCommand
         {
             Username = defaultUsername,
             Password = defaultPassword,

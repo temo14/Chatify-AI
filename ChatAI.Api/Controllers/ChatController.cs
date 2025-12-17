@@ -1,6 +1,7 @@
 ﻿using ChatAI.Api.DTOs;
-using ChatAI.Application.Commands;
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Chat.GetConversationHistory;
+using ChatAI.Application.Features.Chat.SendMessage;
+using ChatAI.Application.Features.Session.GetUserSessions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 

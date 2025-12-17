@@ -1,6 +1,5 @@
-using ChatAI.Application.Commands;
 using ChatAI.Application.Configuration;
-using ChatAI.Application.Validators;
+using ChatAI.Application.Features.Chat.SendMessage;
 using FluentValidation.TestHelper;
 using Microsoft.Extensions.Options;
 

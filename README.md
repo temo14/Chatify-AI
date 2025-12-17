@@ -44,6 +44,67 @@ ChatAI.Infrastructure   - Azure OpenAI, Qdrant, SQL Server, tools
 - **SQL Server 2022**: Relational storage for metadata and sessions
 - **Docker**: Containerized deployment with multi-service orchestration
 
+## Configuration
+
+### Best Practices
+
+**🔒 Security First:**
+- Never commit secrets to source control
+- Use environment variables for production secrets
+- Use `appsettings.Development.json` for local development secrets
+
+**📁 Configuration Hierarchy:**
+1. `appsettings.json` - Base configuration (no secrets)
+2. `appsettings.{Environment}.json` - Environment-specific overrides
+3. Environment variables - Production secrets (highest priority)
+4. User secrets (local development only)
+
+### Local Development Setup
+
+1. **Copy development settings:**
+   ```bash
+   cp ChatAI.Api/appsettings.Development.json.example ChatAI.Api/appsettings.Development.json
+   ```
+
+2. **Edit `appsettings.Development.json`** with your local secrets:
+   ```json
+   {
+     "ConnectionStrings": {
+       "DefaultConnection": "Server=localhost;Database=ChatifyAI_Dev;Integrated Security=true;"
+     },
+     "AzureOpenAI": {
+       "Endpoint": "https://your-resource.openai.azure.com/",
+       "ApiKey": "your-api-key-here"
+     },
+     "Jwt": {
+       "Secret": "dev-jwt-secret-key-for-development-only"
+     }
+   }
+   ```
+
+### Production Setup
+
+**Use environment variables for all secrets:**
+```bash
+# Database
+export CONNECTIONSTRINGS__DEFAULTCONNECTION="Server=prod-server;Database=ChatifyAI;User Id=sa;Password=StrongPass123;"
+
+# Azure OpenAI
+export AZUREOPENAI__ENDPOINT="https://your-prod-resource.openai.azure.com/"
+export AZUREOPENAI__APIKEY="your-production-api-key"
+
+# JWT
+export JWT__SECRET="your-very-strong-production-jwt-secret-key"
+
+# Email (optional)
+export EMAIL__SMTPHOST="smtp.gmail.com"
+export EMAIL__USERNAME="your-email@gmail.com"
+export EMAIL__PASSWORD="your-app-password"
+```
+
+**For Azure App Service:**
+Set these in Application Settings (Configuration > Application settings).
+
 ## Quick Start with Docker
 
 1. **Clone the repository**
@@ -88,16 +149,13 @@ ChatAI.Infrastructure   - Azure OpenAI, Qdrant, SQL Server, tools
    dotnet restore
    ```
 
-2. **Configure secrets** (recommended for local dev)
+2. **Configure secrets** (see Configuration section above)
    ```bash
-   cd ChatAI.Api
-   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=localhost;Database=ChatifyAI;Trusted_Connection=True;"
-   dotnet user-secrets set "AzureOpenAI:Endpoint" "https://your-resource.openai.azure.com/"
-   dotnet user-secrets set "AzureOpenAI:ApiKey" "your-api-key-here"
-   dotnet user-secrets set "Qdrant:Endpoint" "http://localhost:6333"
+   # Edit ChatAI.Api/appsettings.Development.json with your local secrets
+   # OR use environment variables
    ```
 
-   Or edit `ChatAI.Api/appsettings.json` directly (not recommended for production)
+   Or edit `ChatAI.Api/appsettings.Development.json` directly (development only)
 
 3. **Start Qdrant** (if not using Docker)
    ```bash

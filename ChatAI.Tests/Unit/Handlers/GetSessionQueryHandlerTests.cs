@@ -1,10 +1,8 @@
-using ChatAI.Application.Handlers;
-using ChatAI.Application.Interfaces;
-using ChatAI.Application.Queries;
+using ChatAI.Application.Features.Session.GetSession;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
+using ChatAI.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
-using Moq;
 
 namespace ChatAI.Tests.Unit.Handlers;
 

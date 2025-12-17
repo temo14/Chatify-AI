@@ -1,17 +1,17 @@
 using ChatAI.Application.Configuration;
-using ChatAI.Application.Interfaces;
-using ChatAI.Application.Models.Request;
-using ChatAI.Application.Models.Response;
-using ChatAI.Application.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
-using FluentAssertions;
+using ChatAI.Domain.Interfaces.Repositories;
+using ChatAI.Domain.Interfaces.Services;
+using ChatAI.Domain.Models;
+using ChatAI.Domain.Models.Request;
+using ChatAI.Domain.Models.Response;
+using ChatAI.Infrastructure.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Moq;
 
 namespace ChatAI.Tests.Unit.Services;
 

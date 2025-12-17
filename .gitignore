@@ -369,11 +369,14 @@ FodyWeavers.xsd
 .env
 .env.local
 .env.production
+.env.staging
 .env.*.local
 
-# Development secrets
-**/appsettings.Development.json
+# User Secrets (stored in %APPDATA%\Microsoft\UserSecrets)
 secrets.json
 
 # Docker override (may contain secrets)
 docker-compose.override.yml
+
+# Temporary appsettings with real secrets (if created)
+**/appsettings.*.local.json
