@@ -113,14 +113,22 @@ public class KnowledgeRepository : IKnowledgeRepository
     {
         entity.UpdatedAt = DateTime.UtcNow;
         
-        // If content changed, regenerate embedding
+        // Check if we need to regenerate embedding
         var existing = await _context.KnowledgeDocuments
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == entity.Id, ct);
         
-        if (existing != null && existing.Content != entity.Content)
+        // Regenerate if: content changed OR embedding doesn't exist in Qdrant
+        var needsEmbedding = existing != null && 
+            (existing.Content != entity.Content || string.IsNullOrEmpty(existing.EmbeddingReference));
+        
+        if (needsEmbedding && !string.IsNullOrWhiteSpace(entity.Content))
         {
-            _logger.LogDebug("Content changed, regenerating embedding for {Title}", entity.Title);
+            _logger.LogDebug("Regenerating embedding for {Title} (content changed: {ContentChanged}, missing reference: {MissingRef})", 
+                entity.Title, 
+                existing?.Content != entity.Content,
+                string.IsNullOrEmpty(existing?.EmbeddingReference));
+                
             var embeddingResponse = await _embeddingClient.GenerateEmbeddingAsync(entity.Content);
             var embedding = embeddingResponse.Value.ToFloats().ToArray();
             
@@ -134,6 +142,8 @@ public class KnowledgeRepository : IKnowledgeRepository
             
             await _vectorService.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
             entity.EmbeddingReference = $"qdrant:{entity.Id}";
+            
+            _logger.LogDebug("✓ Embedding regenerated and stored");
         }
         
         _context.KnowledgeDocuments.Update(entity);

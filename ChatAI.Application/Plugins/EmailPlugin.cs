@@ -1,7 +1,5 @@
 using ChatAI.Application.Services;
-using ChatAI.Domain.Interfaces.Repositories;
 using ChatAI.Domain.Interfaces.Services;
-using ChatAI.Domain.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;

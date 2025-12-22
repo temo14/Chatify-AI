@@ -106,6 +106,10 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<ChatAI.Application.Plugins.EmailPlugin>(),
                 "EmailPlugin");
             
+            kernel.Plugins.AddFromObject(
+                sp.GetRequiredService<ChatAI.Application.Plugins.KnowledgePlugin>(),
+                "KnowledgePlugin");
+            
             return kernel;
         });
 
@@ -120,14 +124,14 @@ public static class ServiceCollectionExtensions
         // MediatR for CQRS (Command/Query Responsibility Segregation)
         services.AddMediatR(cfg =>
         {
-            cfg.RegisterServicesFromAssembly(typeof(SemanticKernelChatService).Assembly);
+            cfg.RegisterServicesFromAssembly(typeof(ChatAI.Application.Behaviors.ValidationBehavior<,>).Assembly);
             
             // Add validation pipeline behavior
             cfg.AddOpenBehavior(typeof(ChatAI.Application.Behaviors.ValidationBehavior<,>));
         });
 
         // FluentValidation validators
-        services.AddValidatorsFromAssembly(typeof(SemanticKernelChatService).Assembly);
+        services.AddValidatorsFromAssembly(typeof(ChatAI.Application.Behaviors.ValidationBehavior<,>).Assembly);
         
         // Memory cache (no SizeLimit to avoid conflicts with AspNetCoreRateLimit)
         services.AddMemoryCache();
@@ -164,6 +168,9 @@ public static class ServiceCollectionExtensions
 
         // Email plugin (Scoped - needs ChatContext which is scoped)
         services.AddScoped<ChatAI.Application.Plugins.EmailPlugin>();
+        
+        // Knowledge plugin (Scoped - needs ChatContext and KnowledgeRepository)
+        services.AddScoped<ChatAI.Application.Plugins.KnowledgePlugin>();
 
         // Chat services - Using Semantic Kernel for AI orchestration
         services.AddScoped<IChatService, ChatAI.Infrastructure.Services.SemanticKernelChatService>();

@@ -259,11 +259,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // Store token in localStorage
-                    localStorage.setItem('authToken', data.token);
-                    localStorage.setItem('username', data.username);
-                    
-                    // Redirect to admin panel
+                    // Cookie is set by server, just redirect
                     window.location.href = '/admin.html';
                 } else {
                     showError(data.message || 'Invalid username or password');
@@ -284,11 +280,6 @@
 
         // Auto-focus username field
         document.getElementById('username').focus();
-
-        // Check if already logged in
-        if (localStorage.getItem('authToken')) {
-            window.location.href = '/admin.html';
-        }
     </script>
 </body>
 </html>

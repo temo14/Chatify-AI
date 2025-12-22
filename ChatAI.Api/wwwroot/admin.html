@@ -646,7 +646,9 @@
         // Authentication
         async function checkAuth() {
             try {
-                const response = await fetch('/api/auth/me');
+                const response = await fetch('/api/auth/me', {
+                    credentials: 'include'
+                });
                 if (!response.ok) {
                     window.location.href = '/admin-login.html';
                     return false;
@@ -663,9 +665,10 @@
 
         async function logout() {
             try {
-                await fetch('/api/auth/logout', { method: 'POST' });
-                localStorage.removeItem('authToken');
-                localStorage.removeItem('username');
+                await fetch('/api/auth/logout', { 
+                    method: 'POST',
+                    credentials: 'include'
+                });
                 window.location.href = '/admin-login.html';
             } catch (error) {
                 console.error('Logout failed:', error);
@@ -782,6 +785,7 @@
 
         // Form submission for creating API key
         document.addEventListener('DOMContentLoaded', () => {
+            debugger
             const createApiKeyForm = document.getElementById('createApiKeyForm');
             if (createApiKeyForm) {
                 createApiKeyForm.addEventListener('submit', async (e) => {
@@ -1587,6 +1591,7 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', async () => {
             // Check authentication first
+            debugger;
             const isAuthenticated = await checkAuth();
             if (!isAuthenticated) return;
             
