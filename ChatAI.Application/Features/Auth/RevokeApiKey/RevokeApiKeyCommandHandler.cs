@@ -35,7 +35,7 @@ public class RevokeApiKeyCommandHandler : IRequestHandler<RevokeApiKeyCommand, b
         apiKey.IsActive = false;
         await _apiKeyRepository.UpdateAsync(apiKey, cancellationToken);
         
-        _logger.LogInformation("API key revoked successfully: {ClientId}", apiKey.ClientId);
+        _logger.LogInformation("API key revoked successfully for Tenant: {TenantId}", apiKey.TenantId);
         
         return true;
     }

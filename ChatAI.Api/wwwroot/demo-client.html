@@ -13,9 +13,9 @@
         }
         
         :root {
-            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            --primary-color: #667eea;
-            --secondary-color: #764ba2;
+            --primary-gradient: linear-gradient(135deg, #000000 0%, #333333 100%);
+            --primary-color: #000000;
+            --secondary-color: #333333;
             --bg-light: #f7f9fc;
             --border-color: #e1e8ed;
             --text-primary: #333;
@@ -649,6 +649,28 @@
             </div>
         </div>
         
+        <div class="api-key-container" id="apiKeyContainer" style="padding: 20px; background: #f7f9fc; border-bottom: 1px solid #e1e8ed;">
+            <div style="max-width: 600px; margin: 0 auto;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">
+                    <i class="fas fa-key"></i> API Key (Required)
+                </label>
+                <div style="display: flex; gap: 10px;">
+                    <input 
+                        type="password" 
+                        id="apiKeyInput" 
+                        placeholder="Enter your API key (chatai_...)" 
+                        style="flex: 1; padding: 10px 14px; border: 1px solid #e1e8ed; border-radius: 8px; font-size: 14px;"
+                    />
+                    <button 
+                        onclick="saveApiKey()" 
+                        style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        <i class="fas fa-check"></i> Save
+                    </button>
+                </div>
+                <small style="display: block; margin-top: 6px; color: #666;">Your API key is stored locally and used for authentication.</small>
+            </div>
+        </div>
+        
         <div class="chat-messages" id="chatMessages">
             <div class="welcome-message">
                 <h2>👋 Welcome to Chatify AI!</h2>
@@ -692,11 +714,41 @@
         class ChatifyClient {
             constructor() {
                 this.sessionId = this.loadSessionId();
+                this.apiKey = this.loadApiKey();
                 this.updateSessionInfo();
+                this.updateApiKeyUI();
             }
             
             loadSessionId() {
                 return localStorage.getItem('chatify_session_id');
+            }
+            
+            loadApiKey() {
+                return localStorage.getItem('chatify_api_key');
+            }
+            
+            saveApiKey(apiKey) {
+                this.apiKey = apiKey;
+                localStorage.setItem('chatify_api_key', apiKey);
+                this.updateApiKeyUI();
+            }
+            
+            updateApiKeyUI() {
+                const input = document.getElementById('apiKeyInput');
+                if (input) {
+                    input.value = this.apiKey || '';
+                    if (this.apiKey) {
+                        input.type = 'password';
+                    }
+                }
+            }
+            
+            getHeaders() {
+                const headers = { 'Content-Type': 'application/json' };
+                if (this.apiKey) {
+                    headers['X-API-Key'] = this.apiKey;
+                }
+                return headers;
             }
             
             saveSessionId(sessionId) {
@@ -721,9 +773,13 @@
             }
             
             async sendMessage(message) {
+                if (!this.apiKey) {
+                    throw new Error('API key is required. Please enter your API key above.');
+                }
+                
                 const response = await fetch(`${API_URL}/send`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: this.getHeaders(),
                     body: JSON.stringify({
                         message: message,
                         sessionId: this.sessionId,
@@ -746,10 +802,12 @@
             }
             
             async loadHistory() {
-                if (!this.sessionId) return [];
+                if (!this.sessionId || !this.apiKey) return [];
                 
                 try {
-                    const response = await fetch(`${API_URL}/sessions/${this.sessionId}/messages`);
+                    const response = await fetch(`${API_URL}/sessions/${this.sessionId}/messages`, {
+                        headers: this.getHeaders()
+                    });
                     if (!response.ok) return [];
                     return await response.json();
                 } catch (error) {
@@ -1015,7 +1073,7 @@
                 
                 const response = await fetch('/api/feedback', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: chatClient.getHeaders(),
                     body: JSON.stringify({
                         conversationMessageId: messageId,
                         isPositive: isPositive,
@@ -1051,6 +1109,26 @@
                 event.preventDefault();
                 sendMessage();
             }
+        }
+        
+        // Save API key function
+        function saveApiKey() {
+            const apiKeyInput = document.getElementById('apiKeyInput');
+            const apiKey = apiKeyInput.value.trim();
+            
+            if (!apiKey) {
+                showToast('Please enter an API key', 'error');
+                return;
+            }
+            
+            if (!apiKey.startsWith('chatai_')) {
+                showToast('Invalid API key format. Should start with "chatai_"', 'error');
+                return;
+            }
+            
+            chatClient.saveApiKey(apiKey);
+            showToast('API key saved successfully', 'success');
+            apiKeyInput.type = 'password';
         }
         
         // Load previous conversation on startup

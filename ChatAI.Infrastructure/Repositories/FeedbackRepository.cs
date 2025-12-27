@@ -10,17 +10,21 @@ namespace ChatAI.Infrastructure.Repositories;
 /// <summary>
 /// Repository for managing message feedback
 /// Handles CRUD operations and statistics for user feedback
+/// Multi-tenant aware - automatically filters by current tenant
 /// </summary>
 public class FeedbackRepository : IFeedbackRepository
 {
     private readonly ChatDbContext _context;
+    private readonly ITenantContext _tenantContext; // Multi-tenancy support
     private readonly ILogger<FeedbackRepository> _logger;
 
     public FeedbackRepository(
         ChatDbContext context,
+        ITenantContext tenantContext,
         ILogger<FeedbackRepository> logger)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -96,10 +100,13 @@ public class FeedbackRepository : IFeedbackRepository
 
     public async Task<MessageFeedback> AddAsync(MessageFeedback entity, CancellationToken ct = default)
     {
+        entity.TenantId = _tenantContext.RequiredTenantId; // Set tenant from context
+        
         _context.MessageFeedbacks.Add(entity);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogInformation("✅ Feedback {FeedbackId} added for message {MessageId}", entity.Id, entity.MessageId);
+        _logger.LogInformation("✅ Feedback {FeedbackId} added for message {MessageId} in tenant {TenantId}", 
+            entity.Id, entity.MessageId, entity.TenantId);
         
         return entity;
     }

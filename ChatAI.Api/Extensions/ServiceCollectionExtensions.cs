@@ -10,6 +10,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.SemanticKernel;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
@@ -145,9 +146,6 @@ public static class ServiceCollectionExtensions
         // Resilience policies (Singleton - shared policies)
         services.AddSingleton<ChatAI.Infrastructure.Resilience.ResiliencePolicies>();
         
-        // Vector service (Singleton - shared connection pool)
-        services.AddSingleton<IVectorService, QdrantVectorService>();
-        
         // Email service (Singleton - shared SMTP client)
         services.AddSingleton<IEmailService, EmailService>();
         
@@ -158,6 +156,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConfigurationRepository, ConfigurationRepository>();
         services.AddScoped<IAdminUserRepository, ChatAI.Infrastructure.Repositories.AdminUserRepository>();
         services.AddScoped<IApiKeyRepository, ChatAI.Infrastructure.Repositories.ApiKeyRepository>();
+        services.AddScoped<ITenantRepository, TenantRepository>(); // Multi-tenancy support
+        
+        // Multi-tenancy services (Scoped - per request lifecycle)
+        services.AddScoped<ITenantContext, ChatAI.Infrastructure.Services.TenantContext>();
+        services.AddScoped<ChatAI.Infrastructure.Interfaces.IVectorStorageFactory, ChatAI.Infrastructure.Services.VectorStorageFactory>();
         
         // Authentication services
         services.AddScoped<IAuthService, ChatAI.Infrastructure.Services.AuthService>();
@@ -311,22 +314,26 @@ public static class ServiceCollectionExtensions
         // Add authorization policies
         services.AddAuthorization(options =>
         {
-            options.AddPolicy("Admin", policy =>
+            // PlatformAdmin - Only Dott staff can manage customer tenants
+            options.AddPolicy("PlatformAdmin", policy =>
             {
                 policy.RequireAuthenticatedUser();
-                policy.RequireRole("Admin");
+                policy.RequireRole("PlatformAdmin");
             });
             
+            // TenantAdmin - Customer admins + Platform admins
+            // Platform admins can access everything for support purposes
+            options.AddPolicy("TenantAdmin", policy =>
+            {
+                policy.RequireAuthenticatedUser();
+                policy.RequireRole("TenantAdmin", "PlatformAdmin");
+            });
+            
+            // Client - End users authenticating via API key
             options.AddPolicy("Client", policy =>
             {
                 policy.RequireAuthenticatedUser();
                 policy.RequireRole("Client");
-            });
-            
-            options.AddPolicy("AdminOrClient", policy =>
-            {
-                policy.RequireAuthenticatedUser();
-                policy.RequireRole("Admin", "Client");
             });
         });
 

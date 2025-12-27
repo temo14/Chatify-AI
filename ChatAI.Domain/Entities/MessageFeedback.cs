@@ -10,6 +10,11 @@ public class MessageFeedback
     public Guid Id { get; set; } = Guid.NewGuid();
     
     /// <summary>
+    /// Tenant (customer) that owns this feedback
+    /// </summary>
+    public Guid TenantId { get; set; }
+    
+    /// <summary>
     /// Reference to the ChatMessage that was rated
     /// </summary>
     public Guid MessageId { get; set; }

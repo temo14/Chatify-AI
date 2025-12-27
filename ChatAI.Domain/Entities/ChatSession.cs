@@ -8,6 +8,11 @@ public class ChatSession
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     
+    /// <summary>
+    /// Tenant (customer) that owns this session
+    /// </summary>
+    public Guid TenantId { get; set; }
+    
     // Optional user (for future when you add authentication)
     public string? UserId { get; set; } // Nullable - most chats are anonymous
     

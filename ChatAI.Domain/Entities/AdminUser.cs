@@ -8,6 +8,11 @@ public class AdminUser
     public Guid Id { get; set; }
     
     /// <summary>
+    /// Tenant (customer) that owns this admin user
+    /// </summary>
+    public Guid TenantId { get; set; }
+    
+    /// <summary>
     /// Unique username for login
     /// </summary>
     public string Username { get; set; } = string.Empty;
@@ -41,6 +46,13 @@ public class AdminUser
     /// Last successful login timestamp
     /// </summary>
     public DateTime? LastLoginAt { get; set; }
+    
+    /// <summary>
+    /// Platform admin flag - only Dott staff can create/manage customer tenants
+    /// TRUE = Dott staff (platform admin) - can manage all tenants
+    /// FALSE = Customer admin (tenant admin) - can only manage their own tenant's data
+    /// </summary>
+    public bool IsPlatformAdmin { get; set; } = false;
     
     /// <summary>
     /// Number of failed login attempts (for lockout)

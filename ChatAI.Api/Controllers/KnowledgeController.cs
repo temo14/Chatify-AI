@@ -1,10 +1,10 @@
+using ChatAI.Api.Attributes;
 using ChatAI.Api.DTOs.Knowledge;
 using ChatAI.Application.Exceptions;
 using ChatAI.Application.Features.Knowledge.AddDocument;
 using ChatAI.Application.Features.Knowledge.DeleteDocument;
 using ChatAI.Application.Features.Knowledge.GetDocument;
 using ChatAI.Application.Features.Knowledge.GetDocuments;
-using ChatAI.Application.Features.Knowledge.LoadDocumentsToQdrant;
 using ChatAI.Application.Features.Knowledge.SearchKnowledge;
 using ChatAI.Application.Features.Knowledge.UpdateDocument;
 using MediatR;
@@ -20,7 +20,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
-[Authorize(Policy = "Admin")]
+[TenantAdmin] // Tenant admins manage their knowledge, platform admins can access all
 public class KnowledgeController : ControllerBase
 {
     private readonly ISender _sender;
@@ -30,21 +30,6 @@ public class KnowledgeController : ControllerBase
     {
         _sender = sender ?? throw new ArgumentNullException(nameof(sender));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
-    /// <summary>
-    /// Batch load existing knowledge documents to Qdrant vector database
-    /// </summary>
-    /// <response code="200">Returns load statistics</response>
-    /// <response code="500">Internal server error</response>
-    [HttpPost("load-to-qdrant")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> LoadToQdrant()
-    {
-        var command = new LoadDocumentsToQdrantCommand();
-        var result = await _sender.Send(command);
-        return Ok(result);
     }
 
     /// <summary>
@@ -60,11 +45,6 @@ public class KnowledgeController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> AddDocument([FromBody] AddKnowledgeDocumentRequest request)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
         var command = new AddKnowledgeDocumentCommand
         {
             Title = request.Title,

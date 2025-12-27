@@ -52,3 +52,12 @@ public class UnauthorizedException : Exception
 {
     public UnauthorizedException(string message) : base(message) { }
 }
+
+/// <summary>
+/// Thrown when validation fails (e.g., duplicate slug, invalid data)
+/// </summary>
+public class ValidationException : Exception
+{
+    public ValidationException(string message) : base(message) { }
+    public ValidationException(string message, Exception innerException) : base(message, innerException) { }
+}

@@ -1,6 +1,5 @@
 using AspNetCoreRateLimit;
 using ChatAI.Api.Extensions;
-using ChatAI.Application.Features.Auth.InitializeDefaultAdmin;
 using Serilog;
 
 // Configure Serilog before building the application
@@ -32,24 +31,8 @@ try
 
     var app = builder.Build();
 
+    // Apply database migrations and seed initial data
     await app.UseDatabaseMigrationsAsync(app.Environment);
-    
-    // Initialize default admin user
-    using (var scope = app.Services.CreateScope())
-    {
-        var mediator = scope.ServiceProvider.GetRequiredService<MediatR.IMediator>();
-        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        
-        var defaultUsername = configuration["ADMIN__USERNAME"] ?? "admin";
-        var defaultPassword = configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
-        
-        await mediator.Send(new InitializeDefaultAdminCommand
-        {
-            Username = defaultUsername,
-            Password = defaultPassword,
-            Email = null
-        });
-    }
 
     // Global exception handler - must be first in pipeline
     app.UseGlobalExceptionHandler();
@@ -64,6 +47,10 @@ try
     
     // Authentication and authorization
     app.UseAuthentication();
+    
+    // Multi-tenancy middleware - MUST be after UseAuthentication() but before UseAuthorization()
+    app.UseTenantResolution();
+    
     app.UseAuthorization();
     
     // Map health check endpoints

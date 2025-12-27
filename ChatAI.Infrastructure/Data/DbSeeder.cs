@@ -4,20 +4,30 @@ using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 
 namespace ChatAI.Infrastructure.Data;
 
 /// <summary>
-/// Seeds the database with initial test data
+/// Seeds the database with initial data on first run
+/// Creates: Dott tenant, Platform admin user, TenantSettings, Demo knowledge
 /// </summary>
 public class DbSeeder
 {
     private readonly ChatDbContext _context;
+    private readonly IAuthService _authService;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<DbSeeder> _logger;
 
-    public DbSeeder(ChatDbContext context, ILogger<DbSeeder> logger)
+    public DbSeeder(
+        ChatDbContext context, 
+        IAuthService authService,
+        IConfiguration configuration,
+        ILogger<DbSeeder> logger)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _authService = authService ?? throw new ArgumentNullException(nameof(authService));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -25,17 +35,24 @@ public class DbSeeder
     {
         try
         {
-            // Check if database has any data
-            if (await _context.KnowledgeDocuments.AnyAsync())
+            // 1. Seed Dott tenant with platform admin user (in one transaction)
+            var dottTenant = await SeedDottTenantAsync();
+
+            // 2. Seed platform-level admin configurations
+            await SeedAdminConfigurationsAsync();
+
+            // Check if database already has knowledge data
+            // Must ignore query filters since TenantContext isn't set during seeding
+            if (await _context.KnowledgeDocuments.IgnoreQueryFilters().AnyAsync())
             {
-                _logger.LogInformation("Database already seeded, skipping");
+                _logger.LogInformation("Database already seeded with knowledge, skipping");
                 return;
             }
 
-            _logger.LogInformation("Seeding database with initial data...");
+            _logger.LogInformation("Seeding database with demo data...");
 
-            await SeedKnowledgeBaseAsync();
-            await SeedTestConversationAsync();
+            // 4. Seed demo knowledge base for testing ChatifyAI
+            await SeedDemoKnowledgeAsync(dottTenant.Id);
 
             await _context.SaveChangesAsync();
 
@@ -49,15 +66,144 @@ public class DbSeeder
     }
 
     /// <summary>
-    /// Seed knowledge base with sample documents
+    /// Seeds the Dott tenant - YOUR operational tenant for platform administration
+    /// Platform admins belong to this tenant and can manage all customer tenants
+    /// Also used for testing ChatifyAI with demo knowledge
     /// </summary>
-    private async Task SeedKnowledgeBaseAsync()
+    private async Task<Tenant> SeedDottTenantAsync()
+    {
+        // Check if Dott tenant exists
+        var existingTenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Slug == "dott");
+        if (existingTenant != null)
+        {
+            _logger.LogInformation("Dott tenant already exists");
+            return existingTenant;
+        }
+
+        // Get credentials from configuration or use defaults
+        var username = _configuration["ADMIN__USERNAME"] ?? "admin";
+        var password = _configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
+        var email = _configuration["ADMIN__EMAIL"] ?? "admin@dott.ai";
+
+        // Create IDs upfront to avoid circular dependency
+        var tenantId = Guid.NewGuid();
+        var adminUserId = Guid.NewGuid();
+
+        // Create the platform admin user with the correct TenantId
+        var platformAdmin = new AdminUser
+        {
+            Id = adminUserId,
+            Username = username,
+            PasswordHash = _authService.HashPassword(password),
+            Email = email,
+            FullName = "Platform Administrator",
+            TenantId = tenantId,
+            IsPlatformAdmin = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.AdminUsers.Add(platformAdmin);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("✓ Created platform admin user: {Username}", username);
+
+        // Now create the Dott tenant (admin user already references it via TenantId)
+        var dottTenant = new Tenant
+        {
+            Id = tenantId,
+            Slug = "dott",
+            Name = "Dott - Platform Administration",
+            Email = email,
+            PlanTier = "Internal",
+            IsActive = true,
+            MaxDocuments = 1000,
+            MaxMonthlyMessages = 999999,
+            CurrentDocumentCount = 0,
+            CurrentMonthMessages = 0,
+            BillingPeriodStart = DateTime.UtcNow,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var settings = new TenantSettings
+        {
+            Id = Guid.NewGuid(),
+            TenantId = dottTenant.Id,
+            VectorStorageMode = "SQL",
+            EnableDocumentChunking = true,
+            EnableChatHistory = true,
+            ChatHistoryRetentionDays = 365,
+            EnableFeedback = true,
+            EnableOverview = true,
+            WelcomeMessage = "Welcome to ChatifyAI! How can I help you today?",
+            Temperature = 0.7f,
+            MaxTokens = 2000,
+            EnableTools = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Tenants.Add(dottTenant);
+        _context.TenantSettings.Add(settings);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("✓ Created Dott tenant: {TenantSlug}", dottTenant.Slug);
+        return dottTenant;
+    }
+
+    /// <summary>
+    /// Seeds the platform admin user - YOUR account for managing the platform
+    /// Only platform admins can create and manage customer tenants
+    /// </summary>
+    private async Task SeedPlatformAdminAsync(Guid dottTenantId)
+    {
+        // Check if platform admin already exists
+        // Must ignore query filters since TenantContext isn't set during seeding
+        var existingAdmin = await _context.AdminUsers
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.IsPlatformAdmin && u.TenantId == dottTenantId);
+        
+        if (existingAdmin != null)
+        {
+            _logger.LogInformation("Platform admin already exists");
+            return;
+        }
+
+        // Get credentials from configuration or use defaults
+        var username = _configuration["ADMIN__USERNAME"] ?? "admin";
+        var password = _configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
+        var email = _configuration["ADMIN__EMAIL"] ?? "admin@dott.ai";
+
+        var platformAdmin = new AdminUser
+        {
+            Id = Guid.NewGuid(),
+            Username = username,
+            PasswordHash = _authService.HashPassword(password),
+            Email = email,
+            FullName = "Platform Administrator",
+            TenantId = dottTenantId,
+            IsPlatformAdmin = true, // Critical: Enables tenant management
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.AdminUsers.Add(platformAdmin);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("✓ Created platform admin: {Username}", username);
+    }
+
+    /// <summary>
+    /// Seed demo knowledge base for testing ChatifyAI functionality
+    /// These are example documents to demonstrate RAG capabilities
+    /// </summary>
+    private async Task SeedDemoKnowledgeAsync(Guid tenantId)
     {
         var knowledgeDocs = new List<KnowledgeDocument>
         {
             new KnowledgeDocument
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantId,
                 Title = "Company Return Policy",
                 Content = @"Our company offers a generous 30-day return policy for all products. 
                 
@@ -194,71 +340,129 @@ public class DbSeeder
         };
 
         _context.KnowledgeDocuments.AddRange(knowledgeDocs);
-        _logger.LogInformation("Added {Count} knowledge documents", knowledgeDocs.Count);
+        _logger.LogInformation("Added {Count} demo knowledge documents for Dott tenant", knowledgeDocs.Count);
     }
 
     /// <summary>
-    /// Seed a test conversation for demo purposes
+    /// Seeds platform-level admin configurations (system defaults)
+    /// These are global settings used across the platform
     /// </summary>
-    private async Task SeedTestConversationAsync()
+    private async Task SeedAdminConfigurationsAsync()
     {
-        var sessionId = Guid.NewGuid().ToString();
-        var userId = "demo-user";
-
-        var session = new ChatSession
+        // Check if admin configurations already exist
+        if (await _context.AdminConfigurations.AnyAsync())
         {
-            Id = sessionId,
-            UserId = userId,
-            Title = "Demo Conversation - Product Return Question",
-            CreatedAt = DateTime.UtcNow.AddHours(-2),
-            UpdatedAt = DateTime.UtcNow,
-            LastActivityAt = DateTime.UtcNow,
-            IsActive = true
-        };
+            _logger.LogInformation("AdminConfigurations already seeded");
+            return;
+        }
 
-        var messages = new List<ChatMessage>
+        var now = DateTime.UtcNow;
+        var adminConfigs = new List<AdminConfiguration>
         {
-            new ChatMessage
+            new()
             {
                 Id = Guid.NewGuid(),
-                SessionId = sessionId,
-                UserId = userId,
-                Role = MessageRole.User,
-                Content = "Hi! I bought a product last week and I'm not happy with it. Can I return it?",
-                Timestamp = DateTime.UtcNow.AddHours(-2)
+                Key = "AI.DefaultSystemPrompt",
+                Value = @"You are ChatifyAI, an intelligent conversational assistant.
+
+                ## CORE ABILITIES
+                - Knowledge Base Access: Search and retrieve information from integrated knowledge repository
+                - Email Support Tool: Send detailed support emails to administrators when needed
+                - Conversation Memory: Maintain context across conversations
+
+                ## OPERATING PRINCIPLES
+                1. ACCURACY FIRST: Base responses on knowledge base, clearly state limitations
+                2. CLARITY: Use clear formatting, adapt technical depth to user expertise
+                3. PROACTIVE: Anticipate follow-up questions, offer to escalate issues
+                4. PROFESSIONAL: Friendly yet professional tone, respect privacy",
+                DataType = "String",
+                Category = "AI",
+                Description = "Default system prompt for AI conversations",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
             },
-            new ChatMessage
+            new()
             {
                 Id = Guid.NewGuid(),
-                SessionId = sessionId,
-                UserId = userId,
-                Role = MessageRole.Assistant,
-                Content = "Hello! Yes, you can absolutely return it. According to our company policy, we offer a generous 30-day return policy for all products. Since you purchased it just last week, you're well within the return window. To initiate the return, you'll need:\n\n1. The product in original condition\n2. Original packaging\n3. Your receipt or proof of purchase\n\nYou can contact our customer service at returns@company.com or call 1-800-RETURNS to start the process. You'll receive a full refund!",
-                Timestamp = DateTime.UtcNow.AddHours(-2).AddMinutes(1)
+                Key = "AI.DefaultTemperature",
+                Value = "0.7",
+                DataType = "Float",
+                Category = "AI",
+                Description = "Default temperature for AI responses (0.0-1.0)",
+                ValidationRule = "range:0,1",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
             },
-            new ChatMessage
+            new()
             {
                 Id = Guid.NewGuid(),
-                SessionId = sessionId,
-                UserId = userId,
-                Role = MessageRole.User,
-                Content = "Great! How long will it take to get my refund?",
-                Timestamp = DateTime.UtcNow.AddHours(-1)
+                Key = "AI.DefaultMaxTokens",
+                Value = "2000",
+                DataType = "Integer",
+                Category = "AI",
+                Description = "Default maximum tokens for AI responses",
+                ValidationRule = "range:100,4000",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
             },
-            new ChatMessage
+            new()
             {
                 Id = Guid.NewGuid(),
-                SessionId = sessionId,
-                UserId = userId,
-                Role = MessageRole.Assistant,
-                Content = "Once we receive your returned item, refunds are typically processed within 5-7 business days. The refund will be credited back to your original payment method. You'll receive an email confirmation once the refund has been processed.",
-                Timestamp = DateTime.UtcNow.AddHours(-1).AddMinutes(1)
+                Key = "Features.EmailSupportEnabled",
+                Value = "true",
+                DataType = "Boolean",
+                Category = "Features",
+                Description = "Enable/disable email support tool globally",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Key = "Features.DocumentChunkingEnabled",
+                Value = "true",
+                DataType = "Boolean",
+                Category = "Features",
+                Description = "Enable/disable document chunking for large documents",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Key = "VectorStorage.QdrantThreshold",
+                Value = "100",
+                DataType = "Integer",
+                Category = "VectorStorage",
+                Description = "Document count threshold for switching from SQL to Qdrant",
+                ValidationRule = "min:1",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                Key = "Security.SessionExpirationMinutes",
+                Value = "60",
+                DataType = "Integer",
+                Category = "Security",
+                Description = "JWT session expiration in minutes",
+                ValidationRule = "range:5,1440",
+                IsActive = true,
+                ModifiedBy = "System",
+                CreatedAt = now
             }
         };
 
-        _context.ChatSessions.Add(session);
-        _context.ChatMessages.AddRange(messages);
-        
-        _logger.LogInformation("Added test conversation with {Count} messages", messages.Count);
+        _context.AdminConfigurations.AddRange(adminConfigs);
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("✓ Seeded {Count} platform admin configurations", adminConfigs.Count);
     }
 }

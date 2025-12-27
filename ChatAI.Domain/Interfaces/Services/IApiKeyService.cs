@@ -16,9 +16,4 @@ public interface IApiKeyService
     /// Hash an API key using SHA256
     /// </summary>
     string HashApiKey(string plainKey);
-    
-    /// <summary>
-    /// Generate a unique client ID
-    /// </summary>
-    string GenerateClientId();
 }

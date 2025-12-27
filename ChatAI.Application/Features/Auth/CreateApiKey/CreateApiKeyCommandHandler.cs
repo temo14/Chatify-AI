@@ -26,17 +26,11 @@ public class CreateApiKeyCommandHandler : IRequestHandler<CreateApiKeyCommand, A
     
     public async Task<ApiKeyResult> Handle(CreateApiKeyCommand request, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Creating new API key for client: {ClientName}", request.ClientName);
+        _logger.LogInformation("Creating new API key for client: {ClientName}, Tenant: {TenantId}", 
+            request.ClientName, request.TenantId);
         
-        // Generate API key and client ID
+        // Generate API key
         var (plainKey, keyHash) = _apiKeyService.GenerateApiKey();
-        var clientId = _apiKeyService.GenerateClientId();
-        
-        // Ensure client ID is unique
-        while (await _apiKeyRepository.ClientIdExistsAsync(clientId, cancellationToken))
-        {
-            clientId = _apiKeyService.GenerateClientId();
-        }
         
         // Create API key entity
         var apiKey = new ApiKey
@@ -44,7 +38,7 @@ public class CreateApiKeyCommandHandler : IRequestHandler<CreateApiKeyCommand, A
             Id = Guid.NewGuid(),
             KeyHash = keyHash,
             ClientName = request.ClientName,
-            ClientId = clientId,
+            TenantId = request.TenantId.ToString(),
             Description = request.Description,
             RateLimitPerMinute = request.RateLimitPerMinute,
             RateLimitPerDay = request.RateLimitPerDay,
@@ -57,14 +51,14 @@ public class CreateApiKeyCommandHandler : IRequestHandler<CreateApiKeyCommand, A
         // Save to database
         await _apiKeyRepository.CreateAsync(apiKey, cancellationToken);
         
-        _logger.LogInformation("API key created successfully: {ClientId}", clientId);
+        _logger.LogInformation("API key created successfully for Tenant: {TenantId}", apiKey.TenantId);
         
         // Return response with plain key (ONLY time it's visible)
         return new ApiKeyResult
         {
             Id = apiKey.Id,
             ClientName = apiKey.ClientName,
-            ClientId = apiKey.ClientId,
+            TenantId = apiKey.TenantId,
             Description = apiKey.Description,
             IsActive = apiKey.IsActive,
             RateLimitPerMinute = apiKey.RateLimitPerMinute,

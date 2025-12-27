@@ -1,5 +1,6 @@
 using ChatAI.Api.DTOs;
 using ChatAI.Domain.Interfaces.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -11,6 +12,7 @@ namespace ChatAI.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class ChatStreamController : ControllerBase
 {
     private readonly IChatStreamService _chatStreamService;
@@ -39,13 +41,6 @@ public class ChatStreamController : ControllerBase
         [FromBody] ChatRequestDto dto, 
         CancellationToken cancellationToken)
     {
-        if (!ModelState.IsValid)
-        {
-            Response.StatusCode = 400;
-            await Response.WriteAsJsonAsync(new { error = "Invalid request" }, cancellationToken);
-            return;
-        }
-
         // Configure SSE headers
         Response.ContentType = "text/event-stream";
         Response.Headers.Append("Cache-Control", "no-cache");

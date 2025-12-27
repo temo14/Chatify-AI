@@ -7,7 +7,7 @@ public class ApiKeyResult
 {
     public Guid Id { get; set; }
     public string ClientName { get; set; } = string.Empty;
-    public string ClientId { get; set; } = string.Empty;
+    public string TenantId { get; set; } = string.Empty;
     public string? Description { get; set; }
     public bool IsActive { get; set; }
     public int RateLimitPerMinute { get; set; }

@@ -1,6 +1,7 @@
 using ChatAI.Application.Features.Session.ExportSession;
 using ChatAI.Application.Features.Session.GetSession;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text;
 
@@ -11,6 +12,7 @@ namespace ChatAI.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SessionController : ControllerBase
 {
     private readonly ISender _sender;

@@ -10,42 +10,42 @@ namespace ChatAI.Api.Extensions;
 public static class ApplicationBuilderExtensions
 {
     /// <summary>
-    /// Run database migrations and seed data (Development only)
+    /// Run database migrations and seed data
     /// </summary>
+    /// <param name="runMigrationsInProduction">Set to true to run migrations in production (use with caution)</param>
     public static async Task<IApplicationBuilder> UseDatabaseMigrationsAsync(
         this IApplicationBuilder app,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        bool runMigrationsInProduction = false)
     {
-        if (!environment.IsDevelopment())
-        {
-            return app;
-        }
-
         using var scope = app.ApplicationServices.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+        // In production, only run migrations if explicitly enabled
+        if (environment.IsProduction() && !runMigrationsInProduction)
+        {
+            logger.LogInformation("Production environment detected. Skipping automatic migrations. Run migrations manually using: dotnet ef database update");
+            return app;
+        }
 
         // Run SQL Server migrations
         logger.LogInformation("Running database migrations...");
         await db.Database.MigrateAsync();
 
-        // Initialize Qdrant vector database
-        try
+        // Seed data (only in development or first run)
+        if (environment.IsDevelopment())
         {
-            logger.LogInformation("Initializing Qdrant vector database...");
-            var vectorService = scope.ServiceProvider.GetRequiredService<IVectorService>();
-            await vectorService.InitializeAsync();
-            logger.LogInformation("✓ Qdrant initialized successfully");
+            logger.LogInformation("Seeding database...");
+            var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+            var seeder = new DbSeeder(
+                db, 
+                authService, 
+                configuration, 
+                scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>());
+            await seeder.SeedAsync();
         }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to initialize Qdrant - vector search may not work. Ensure Qdrant is running.");
-        }
-
-        // Seed data
-        logger.LogInformation("Seeding database with test data...");
-        var seeder = new DbSeeder(db, scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>());
-        await seeder.SeedAsync();
 
         return app;
     }
@@ -79,5 +79,14 @@ public static class ApplicationBuilderExtensions
     public static IApplicationBuilder UseGlobalExceptionHandler(this IApplicationBuilder app)
     {
         return app.UseMiddleware<ChatAI.Api.Middleware.GlobalExceptionMiddleware>();
+    }
+
+    /// <summary>
+    /// Enable multi-tenancy middleware for tenant resolution
+    /// IMPORTANT: Must be called after UseAuthentication() and before UseAuthorization()
+    /// </summary>
+    public static IApplicationBuilder UseTenantResolution(this IApplicationBuilder app)
+    {
+        return app.UseMiddleware<ChatAI.Api.Middleware.TenantResolutionMiddleware>();
     }
 }

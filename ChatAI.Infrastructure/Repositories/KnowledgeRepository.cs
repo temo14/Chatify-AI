@@ -6,6 +6,7 @@ using ChatAI.Domain.Models;
 using ChatAI.Domain.Entities;
 using ChatAI.Infrastructure.Data;
 using ChatAI.Infrastructure.Services;
+using ChatAI.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,13 +17,16 @@ namespace ChatAI.Infrastructure.Repositories;
 /// <summary>
 /// Repository for managing knowledge base documents (RAG)
 /// Handles semantic search and document retrieval for AI context
+/// Multi-tenant aware - automatically filters by current tenant
+/// Uses per-tenant vector storage (SQL or Qdrant based on TenantSettings)
 /// </summary>
 public class KnowledgeRepository : IKnowledgeRepository
 {
     private readonly ChatDbContext _context;
     private readonly EmbeddingClient _embeddingClient; // For generating embeddings
-    private readonly IVectorService _vectorService; // For vector search
+    private readonly IVectorStorageFactory _vectorStorageFactory; // For tenant-specific vector storage
     private readonly ICacheService _cacheService;
+    private readonly ITenantContext _tenantContext; // Multi-tenancy support
     private readonly ILogger<KnowledgeRepository> _logger;
     private readonly CacheOptions _cacheOptions;
     private readonly ChatOptions _chatOptions;
@@ -30,16 +34,18 @@ public class KnowledgeRepository : IKnowledgeRepository
     public KnowledgeRepository(
         ChatDbContext context,
         EmbeddingClient embeddingClient,
-        IVectorService vectorService,
+        IVectorStorageFactory vectorStorageFactory,
         ICacheService cacheService,
+        ITenantContext tenantContext,
         ILogger<KnowledgeRepository> logger,
         IOptions<CacheOptions> cacheOptions,
         IOptions<ChatOptions> chatOptions)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _embeddingClient = embeddingClient ?? throw new ArgumentNullException(nameof(embeddingClient));
-        _vectorService = vectorService ?? throw new ArgumentNullException(nameof(vectorService));
+        _vectorStorageFactory = vectorStorageFactory ?? throw new ArgumentNullException(nameof(vectorStorageFactory));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
         _chatOptions = chatOptions?.Value ?? throw new ArgumentNullException(nameof(chatOptions));
@@ -47,6 +53,7 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task<KnowledgeDocument?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
+        // Tenant filtering handled by global query filter in ChatDbContext
         return await _context.KnowledgeDocuments
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == id, ct);
@@ -54,6 +61,7 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task<IEnumerable<KnowledgeDocument>> GetAllAsync(CancellationToken ct = default)
     {
+        // Tenant filtering handled by global query filter in ChatDbContext
         return await _context.KnowledgeDocuments
             .AsNoTracking()
             .OrderByDescending(d => d.CreatedAt)
@@ -66,6 +74,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         {
             entity.CreatedAt = DateTime.UtcNow;
             entity.IsActive = true;
+            entity.TenantId = _tenantContext.RequiredTenantId; // Set tenant from context
             
             // Generate embedding for semantic search (with caching)
             if (!string.IsNullOrWhiteSpace(entity.Content))
@@ -82,24 +91,27 @@ public class KnowledgeRepository : IKnowledgeRepository
                     },
                     TimeSpan.FromHours(_cacheOptions.EmbeddingExpirationHours)).ConfigureAwait(false);
                 
-                // Store embedding in Qdrant
-                var metadata = new Dictionary<string, string>
+                // Store embedding using tenant-specific vector storage (SQL or Qdrant)
+                var vectorStorage = await _vectorStorageFactory.CreateForCurrentTenantAsync(ct);
+                var metadata = new Dictionary<string, object>
                 {
                     { "title", entity.Title },
                     { "category", entity.Category ?? "general" },
-                    { "source", entity.Source ?? "unknown" }
+                    { "source", entity.Source ?? "unknown" },
+                    { "tenant_id", entity.TenantId.ToString() } // Tenant isolation
                 };
                 
-                await _vectorService.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
-                entity.EmbeddingReference = $"qdrant:{entity.Id}";
+                await vectorStorage.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
+                entity.EmbeddingReference = $"stored:{entity.Id}"; // Generic reference
                 
-                _logger.LogDebug("✓ Embedding stored in vector database");
+                _logger.LogDebug("✓ Embedding stored in vector storage for tenant {TenantId}", entity.TenantId);
             }
             
             _context.KnowledgeDocuments.Add(entity);
             await _context.SaveChangesAsync(ct);
             
-            _logger.LogInformation("✅ Added knowledge document {Id}: {Title}", entity.Id, entity.Title);
+            _logger.LogInformation("✅ Added knowledge document {Id}: {Title} for tenant {TenantId}", 
+                entity.Id, entity.Title, entity.TenantId);
             return entity;
         }
         catch (Exception ex)
@@ -114,6 +126,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         entity.UpdatedAt = DateTime.UtcNow;
         
         // Check if we need to regenerate embedding
+        // Tenant filtering handled by global query filter in ChatDbContext
         var existing = await _context.KnowledgeDocuments
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == entity.Id, ct);
@@ -132,16 +145,17 @@ public class KnowledgeRepository : IKnowledgeRepository
             var embeddingResponse = await _embeddingClient.GenerateEmbeddingAsync(entity.Content);
             var embedding = embeddingResponse.Value.ToFloats().ToArray();
             
-            // Update embedding in Qdrant
-            var metadata = new Dictionary<string, string>
+            // Update embedding using factory
+            var vectorStorage = await _vectorStorageFactory.CreateForCurrentTenantAsync(ct);
+            var metadata = new Dictionary<string, object>
             {
                 { "title", entity.Title },
                 { "category", entity.Category ?? "general" },
                 { "source", entity.Source ?? "unknown" }
             };
             
-            await _vectorService.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
-            entity.EmbeddingReference = $"qdrant:{entity.Id}";
+            await vectorStorage.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
+            entity.EmbeddingReference = $"vector:{entity.Id}";
             
             _logger.LogDebug("✓ Embedding regenerated and stored");
         }
@@ -154,15 +168,17 @@ public class KnowledgeRepository : IKnowledgeRepository
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
+        // Tenant filtering handled by global query filter in ChatDbContext
         var doc = await _context.KnowledgeDocuments.FindAsync(new object[] { id }, ct);
         if (doc != null)
         {
-            // Delete embedding from Qdrant
-            await _vectorService.DeleteEmbeddingAsync(id, ct);
+            // Delete embedding from tenant's vector storage
+            var vectorStorage = await _vectorStorageFactory.CreateForCurrentTenantAsync(ct);
+            await vectorStorage.DeleteEmbeddingAsync(id, ct);
             
             _context.KnowledgeDocuments.Remove(doc);
             await _context.SaveChangesAsync(ct);
-            _logger.LogInformation("✅ Deleted knowledge document {Id}", id);
+            _logger.LogInformation("✅ Deleted knowledge document {Id} (tenant {TenantId})", id, doc.TenantId);
         }
     }
 
@@ -184,24 +200,26 @@ public class KnowledgeRepository : IKnowledgeRepository
             var embeddingResponse = await _embeddingClient.GenerateEmbeddingAsync(query);
             var queryEmbedding = embeddingResponse.Value.ToFloats().ToArray();
             
-            // Search vector database for similar embeddings
-            var similarDocIds = await _vectorService.SearchSimilarAsync(
+            // Search using tenant-specific vector storage (SQL or Qdrant)
+            var vectorStorage = await _vectorStorageFactory.CreateForCurrentTenantAsync(ct);
+            var similarDocs = await vectorStorage.SearchSimilarAsync(
                 queryEmbedding, 
                 limit: topK * 2, // Get more than needed for filtering
                 scoreThreshold: _chatOptions.SearchScoreThreshold, // Use configured threshold
-                ct: ct
+                cancellationToken: ct
             );
             
-            if (!similarDocIds.Any())
+            var similarDocsList = similarDocs.ToList();
+            if (!similarDocsList.Any())
             {
                 _logger.LogInformation("❌ No similar documents found above threshold ({Threshold})", _chatOptions.SearchScoreThreshold);
                 return Enumerable.Empty<KnowledgeDocument>();
             }
             
-            _logger.LogInformation("✅ Vector search found {Count} candidates", similarDocIds.Count);
+            _logger.LogInformation("✅ Vector search found {Count} candidates", similarDocsList.Count);
             
             // Fetch full documents from database
-            var docIds = similarDocIds.Select(x => x.DocumentId).ToList();
+            var docIds = similarDocsList.Select(x => x.DocumentId).ToList();
             var query2 = _context.KnowledgeDocuments
                 .AsNoTracking()
                 .Where(d => docIds.Contains(d.Id) && d.IsActive);
@@ -215,7 +233,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             var documents = await query2.ToListAsync(ct);
             
             // Sort by similarity score (maintain order from vector search)
-            var scoreDict = similarDocIds.ToDictionary(x => x.DocumentId, x => x.Score);
+            var scoreDict = similarDocsList.ToDictionary(x => x.DocumentId, x => x.Similarity);
             var sortedDocuments = documents
                 .OrderByDescending(d => scoreDict.GetValueOrDefault(d.Id, 0))
                 .Take(topK)

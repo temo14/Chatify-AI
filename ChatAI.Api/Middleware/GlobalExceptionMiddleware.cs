@@ -60,6 +60,7 @@ public class GlobalExceptionMiddleware
                 errorCode = "AI_ERROR";
                 break;
             case UnauthorizedAccessException:
+            case UnauthorizedException:
                 statusCode = HttpStatusCode.Unauthorized;
                 message = "Unauthorized access";
                 errorCode = "UNAUTHORIZED";

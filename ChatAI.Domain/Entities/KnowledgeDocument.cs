@@ -11,6 +11,11 @@ public class KnowledgeDocument
     public Guid Id { get; set; } = Guid.NewGuid();
     
     /// <summary>
+    /// Tenant (customer) that owns this document
+    /// </summary>
+    public Guid TenantId { get; set; }
+    
+    /// <summary>
     /// Document title or heading
     /// </summary>
     public string Title { get; set; } = string.Empty;

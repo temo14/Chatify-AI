@@ -32,9 +32,5 @@ public class ApiKeyService : IApiKeyService
         var hash = sha256.ComputeHash(bytes);
         return Convert.ToBase64String(hash);
     }
-    
-    public string GenerateClientId()
-    {
-        return Guid.NewGuid().ToString("N")[..16]; // First 16 characters of GUID
-    }
+
 }

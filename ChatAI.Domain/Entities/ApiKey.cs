@@ -18,9 +18,10 @@ public class ApiKey
     public string ClientName { get; set; } = string.Empty;
     
     /// <summary>
-    /// Unique identifier for the client
+    /// Tenant identifier - associates this API key with a specific tenant
+    /// Stored as string representation of Guid
     /// </summary>
-    public string ClientId { get; set; } = string.Empty;
+    public string TenantId { get; set; } = string.Empty;
     
     /// <summary>
     /// Description of what this key is used for

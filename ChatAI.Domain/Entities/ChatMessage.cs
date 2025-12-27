@@ -10,6 +10,11 @@ public class ChatMessage
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     
+    /// <summary>
+    /// Tenant (customer) that owns this message
+    /// </summary>
+    public Guid TenantId { get; set; }
+    
     // Relationships
     public string SessionId { get; set; } = string.Empty;
     public string? UserId { get; set; } // Optional - for future authentication

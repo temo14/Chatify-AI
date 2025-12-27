@@ -10,15 +10,18 @@ namespace ChatAI.Application.Features.Auth.Login;
 public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResult>
 {
     private readonly IAdminUserRepository _userRepository;
+    private readonly ITenantRepository _tenantRepository;
     private readonly IAuthService _authService;
     private readonly ILogger<LoginCommandHandler> _logger;
     
     public LoginCommandHandler(
         IAdminUserRepository userRepository,
+        ITenantRepository tenantRepository,
         IAuthService authService,
         ILogger<LoginCommandHandler> logger)
     {
         _userRepository = userRepository;
+        _tenantRepository = tenantRepository;
         _authService = authService;
         _logger = logger;
     }
@@ -51,6 +54,15 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResult>
             throw new UnauthorizedException("Account is inactive");
         }
         
+        // Check if tenant is active (including Dott platform)
+        var tenant = await _tenantRepository.GetByIdAsync(user.TenantId, cancellationToken);
+        if (tenant == null || !tenant.IsActive)
+        {
+            _logger.LogWarning("Login failed: Tenant inactive - {Username}, Tenant: {TenantId}", 
+                request.Username, user.TenantId);
+            throw new UnauthorizedException("Your organization's account is currently inactive. Please contact support.");
+        }
+        
         // Verify password
         if (!_authService.VerifyPassword(request.Password, user.PasswordHash))
         {
@@ -80,15 +92,21 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResult>
         var token = _authService.GenerateJwtToken(user, request.RememberMe);
         var expirationMinutes = request.RememberMe ? 10080 : 60; // 7 days or 1 hour
         
+        // Determine role: PlatformAdmin (Dott staff) or TenantAdmin (customer)
+        var role = user.IsPlatformAdmin ? "PlatformAdmin" : "TenantAdmin";
+        
         _logger.LogInformation("Login successful for user: {Username}", request.Username);
         
         return new LoginResult
         {
+            UserId = user.Id,
             Username = user.Username,
             FullName = user.FullName,
             Email = user.Email,
             Token = token,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes)
+            ExpiresAt = DateTime.UtcNow.AddMinutes(expirationMinutes),
+            TenantId = user.TenantId, // Multi-tenancy support
+            Role = role // PlatformAdmin or TenantAdmin
         };
     }
 }

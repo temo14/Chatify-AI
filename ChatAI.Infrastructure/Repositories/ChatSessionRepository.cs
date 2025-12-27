@@ -9,15 +9,21 @@ namespace ChatAI.Infrastructure.Repositories;
 
 /// <summary>
 /// Repository for managing chat sessions and messages with database persistence
+/// Multi-tenant aware - automatically filters by current tenant
 /// </summary>
 public class ChatSessionRepository : IChatSessionRepository
 {
     private readonly ChatDbContext _context;
+    private readonly ITenantContext _tenantContext; // Multi-tenancy support
     private readonly ILogger<ChatSessionRepository> _logger;
 
-    public ChatSessionRepository(ChatDbContext context, ILogger<ChatSessionRepository> logger)
+    public ChatSessionRepository(
+        ChatDbContext context, 
+        ITenantContext tenantContext,
+        ILogger<ChatSessionRepository> logger)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -44,11 +50,13 @@ public class ChatSessionRepository : IChatSessionRepository
         entity.CreatedAt = DateTime.UtcNow;
         entity.UpdatedAt = DateTime.UtcNow;
         entity.LastActivityAt = DateTime.UtcNow;
+        entity.TenantId = _tenantContext.RequiredTenantId; // Set tenant from context
         
         _context.ChatSessions.Add(entity);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogInformation("✅ Created session {SessionId} for user {UserId}", entity.Id, entity.UserId);
+        _logger.LogInformation("✅ Created session {SessionId} for user {UserId} in tenant {TenantId}", 
+            entity.Id, entity.UserId, entity.TenantId);
         return entity;
     }
 
@@ -126,16 +134,20 @@ public class ChatSessionRepository : IChatSessionRepository
         if (message.Timestamp == default)
             message.Timestamp = DateTime.UtcNow;
         
+        message.TenantId = _tenantContext.RequiredTenantId; // Set tenant from context
+        
         _context.ChatMessages.Add(message);
         await _context.SaveChangesAsync(ct);
         
-        _logger.LogDebug("Added message {MessageId} to session {SessionId}", message.Id, message.SessionId);
+        _logger.LogDebug("Added message {MessageId} to session {SessionId} in tenant {TenantId}", 
+            message.Id, message.SessionId, message.TenantId);
         return message;
     }
 
     public async Task AddMessagesAsync(IEnumerable<ChatMessage> messages, CancellationToken ct = default)
     {
         var messageList = messages.ToList();
+        var tenantId = _tenantContext.RequiredTenantId; // Get tenant once
         
         foreach (var message in messageList)
         {
@@ -144,6 +156,8 @@ public class ChatSessionRepository : IChatSessionRepository
             
             if (message.Timestamp == default)
                 message.Timestamp = DateTime.UtcNow;
+            
+            message.TenantId = tenantId; // Set tenant from context
         }
         
         _context.ChatMessages.AddRange(messageList);

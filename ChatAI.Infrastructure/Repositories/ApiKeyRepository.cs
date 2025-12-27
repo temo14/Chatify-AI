@@ -51,10 +51,4 @@ public class ApiKeyRepository : IApiKeyRepository
         _context.ApiKeys.Update(apiKey);
         await _context.SaveChangesAsync(cancellationToken);
     }
-    
-    public async Task<bool> ClientIdExistsAsync(string clientId, CancellationToken cancellationToken = default)
-    {
-        return await _context.ApiKeys
-            .AnyAsync(k => k.ClientId == clientId, cancellationToken);
-    }
 }

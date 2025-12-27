@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using ChatAI.Domain.Entities;
 
 namespace ChatAI.Domain.Interfaces.Services;
@@ -26,4 +27,9 @@ public interface IAuthService
     /// Validate and parse a JWT token
     /// </summary>
     Guid? ValidateJwtToken(string token);
+    
+    /// <summary>
+    /// Create claims array for an admin user
+    /// </summary>
+    Claim[] CreateUserClaims(AdminUser user);
 }

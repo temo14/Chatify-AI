@@ -1,17 +1,27 @@
 using ChatAI.Domain.Entities;
+using ChatAI.Domain.Interfaces.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatAI.Infrastructure.Data;
 
 /// <summary>
 /// Database context for Chatify AI
-/// Simple schema: Chat sessions/messages + Knowledge base for RAG
+/// Multi-tenant system with global query filters
 /// </summary>
 public class ChatDbContext : DbContext
 {
-    public ChatDbContext(DbContextOptions<ChatDbContext> options) : base(options)
+    private readonly ITenantContext? _tenantContext;
+
+    public ChatDbContext(
+        DbContextOptions<ChatDbContext> options,
+        ITenantContext? tenantContext = null) : base(options)
     {
+        _tenantContext = tenantContext;
     }
+    
+    // Multi-tenancy
+    public DbSet<Tenant> Tenants { get; set; } = null!;
+    public DbSet<TenantSettings> TenantSettings { get; set; } = null!;
     
     // Chat data
     public DbSet<ChatSession> ChatSessions { get; set; } = null!;
@@ -48,10 +58,12 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.LastActivityAt).IsRequired();
             
             // Indexes for queries
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_ChatSessions_TenantId");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_ChatSessions_CreatedAt");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_ChatSessions_UserId");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_ChatSessions_IsActive");
             entity.HasIndex(e => e.LastActivityAt).HasDatabaseName("IX_ChatSessions_LastActivity");
+            entity.HasIndex(e => new { e.TenantId, e.CreatedAt }).HasDatabaseName("IX_ChatSessions_Tenant_Created");
             
             // Ignore computed properties
             entity.Ignore(e => e.Messages);
@@ -92,10 +104,12 @@ public class ChatDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade); // Delete messages when session deleted
             
             // Query indexes
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_ChatMessages_TenantId");
             entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_ChatMessages_SessionId");
             entity.HasIndex(e => new { e.SessionId, e.Timestamp }).HasDatabaseName("IX_ChatMessages_Session_Time");
             entity.HasIndex(e => e.Timestamp).HasDatabaseName("IX_ChatMessages_Timestamp");
             entity.HasIndex(e => e.UserId).HasDatabaseName("IX_ChatMessages_UserId");
+            entity.HasIndex(e => new { e.TenantId, e.Timestamp }).HasDatabaseName("IX_ChatMessages_Tenant_Time");
         });
 
         // ===== KNOWLEDGE DOCUMENT (RAG) =====
@@ -116,11 +130,13 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
             
             // Query indexes (for control panel and RAG search)
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_KnowledgeDocuments_TenantId");
             entity.HasIndex(e => e.Category).HasDatabaseName("IX_KnowledgeDocuments_Category");
             entity.HasIndex(e => e.Source).HasDatabaseName("IX_KnowledgeDocuments_Source");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_KnowledgeDocuments_IsActive");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_KnowledgeDocuments_CreatedAt");
             entity.HasIndex(e => new { e.Category, e.IsActive }).HasDatabaseName("IX_KnowledgeDocuments_Category_Active");
+            entity.HasIndex(e => new { e.TenantId, e.IsActive }).HasDatabaseName("IX_KnowledgeDocuments_Tenant_Active");
         });
         
         // ===== MESSAGE FEEDBACK =====
@@ -139,10 +155,12 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.CreatedAt).IsRequired();
             
             // Indexes for analytics queries
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_MessageFeedbacks_TenantId");
             entity.HasIndex(e => e.MessageId).HasDatabaseName("IX_MessageFeedbacks_MessageId");
             entity.HasIndex(e => e.SessionId).HasDatabaseName("IX_MessageFeedbacks_SessionId");
             entity.HasIndex(e => e.Rating).HasDatabaseName("IX_MessageFeedbacks_Rating");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_MessageFeedbacks_CreatedAt");
+            entity.HasIndex(e => new { e.TenantId, e.Rating }).HasDatabaseName("IX_MessageFeedbacks_Tenant_Rating");
         });
         
         // ===== ADMIN CONFIGURATION =====
@@ -187,9 +205,11 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.LockedUntil);
             
             // Unique username
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_AdminUsers_TenantId");
             entity.HasIndex(e => e.Username).IsUnique().HasDatabaseName("IX_AdminUsers_Username");
             entity.HasIndex(e => e.Email).HasDatabaseName("IX_AdminUsers_Email");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_AdminUsers_IsActive");
+            entity.HasIndex(e => new { e.TenantId, e.Username }).HasDatabaseName("IX_AdminUsers_Tenant_Username");
         });
         
         // ===== API KEY =====
@@ -201,7 +221,7 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.Id).IsRequired();
             entity.Property(e => e.KeyHash).IsRequired().HasMaxLength(500);
             entity.Property(e => e.ClientName).IsRequired().HasMaxLength(200);
-            entity.Property(e => e.ClientId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.TenantId).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Description).HasMaxLength(500);
             entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
             entity.Property(e => e.RateLimitPerMinute).IsRequired().HasDefaultValue(20);
@@ -214,9 +234,88 @@ public class ChatDbContext : DbContext
             
             // Indexes for lookups
             entity.HasIndex(e => e.KeyHash).IsUnique().HasDatabaseName("IX_ApiKeys_KeyHash");
-            entity.HasIndex(e => e.ClientId).HasDatabaseName("IX_ApiKeys_ClientId");
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_ApiKeys_TenantId");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_ApiKeys_IsActive");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_ApiKeys_CreatedAt");
         });
+        
+        // ===== TENANT =====
+        modelBuilder.Entity<Tenant>(entity =>
+        {
+            entity.ToTable("Tenants");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.Slug).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.Email).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.PlanTier).IsRequired().HasMaxLength(50).HasDefaultValue("Free");
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.CustomDomain).HasMaxLength(200);
+            entity.Property(e => e.LogoUrl).HasMaxLength(500);
+            entity.Property(e => e.PrimaryColor).HasMaxLength(20).HasDefaultValue("#667eea");
+            entity.Property(e => e.MaxDocuments).IsRequired().HasDefaultValue(10);
+            entity.Property(e => e.MaxMonthlyMessages).IsRequired().HasDefaultValue(1000);
+            entity.Property(e => e.CurrentDocumentCount).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.CurrentMonthMessages).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.BillingPeriodStart).IsRequired();
+            entity.Property(e => e.SettingsJson).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.LastActivityAt);
+            entity.Property(e => e.SubscriptionExpiresAt);
+            
+            // Unique constraints
+            entity.HasIndex(e => e.Slug).IsUnique().HasDatabaseName("IX_Tenants_Slug");
+            entity.HasIndex(e => e.CustomDomain).IsUnique().HasDatabaseName("IX_Tenants_CustomDomain");
+            entity.HasIndex(e => e.Email).HasDatabaseName("IX_Tenants_Email");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_Tenants_IsActive");
+            entity.HasIndex(e => e.PlanTier).HasDatabaseName("IX_Tenants_PlanTier");
+            entity.HasIndex(e => e.CreatedAt).HasDatabaseName("IX_Tenants_CreatedAt");
+        });
+        
+        // ===== TENANT SETTINGS =====
+        modelBuilder.Entity<TenantSettings>(entity =>
+        {
+            entity.ToTable("TenantSettings");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.TenantId).IsRequired();
+            entity.Property(e => e.VectorStorageMode).IsRequired().HasMaxLength(20).HasDefaultValue("SQL");
+            entity.Property(e => e.QdrantCollectionName).HasMaxLength(100);
+            entity.Property(e => e.EnableDocumentChunking).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.ChunkSize).IsRequired().HasDefaultValue(512);
+            entity.Property(e => e.ChunkOverlap).IsRequired().HasDefaultValue(50);
+            entity.Property(e => e.EnableChatHistory).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.ChatHistoryRetentionDays).IsRequired().HasDefaultValue(90);
+            entity.Property(e => e.EnableFeedback).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.WelcomeMessage).HasMaxLength(500);
+            entity.Property(e => e.ChatPlaceholder).HasMaxLength(200).HasDefaultValue("Ask me anything...");
+            entity.Property(e => e.EnableTools).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.Temperature).IsRequired().HasDefaultValue(0.7);
+            entity.Property(e => e.MaxTokens).IsRequired().HasDefaultValue(1000);
+            entity.Property(e => e.SystemPrompt).HasColumnType("nvarchar(max)");
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt);
+            
+            // One-to-one with Tenant
+            entity.HasOne(s => s.Tenant)
+                .WithOne(t => t.Settings)
+                .HasForeignKey<TenantSettings>(s => s.TenantId)
+                .OnDelete(DeleteBehavior.Cascade);
+                
+            entity.HasIndex(e => e.TenantId).IsUnique().HasDatabaseName("IX_TenantSettings_TenantId");
+        });
+        
+        // ===== GLOBAL QUERY FILTERS (Multi-Tenancy) =====
+        // Automatically filter all queries by current tenant
+        if (_tenantContext != null)
+        {
+            modelBuilder.Entity<KnowledgeDocument>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+            modelBuilder.Entity<ChatSession>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+            modelBuilder.Entity<ChatMessage>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+            modelBuilder.Entity<MessageFeedback>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+            modelBuilder.Entity<AdminUser>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+        }
     }
 }

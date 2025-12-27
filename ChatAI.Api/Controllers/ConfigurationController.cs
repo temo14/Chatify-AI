@@ -1,3 +1,4 @@
+using ChatAI.Api.Attributes;
 using ChatAI.Api.DTOs;
 using ChatAI.Application.Features.Configuration.DeleteConfiguration;
 using ChatAI.Application.Features.Configuration.GetConfiguration;
@@ -12,13 +13,14 @@ using Microsoft.AspNetCore.Mvc;
 namespace ChatAI.Api.Controllers;
 
 /// <summary>
-/// Controller for admin configuration management
-/// Thin controller - delegates all logic to Application layer via CQRS (MediatR)
+/// Controller for platform-level admin configuration management
+/// Manages AdminConfiguration (global platform settings), not tenant-specific settings
+/// Only accessible to platform administrators
 /// </summary>
 [ApiController]
 [Route("api/admin/[controller]")]
 [Produces("application/json")]
-[Authorize(Policy = "Admin")]
+[PlatformAdmin]
 public class ConfigurationController : ControllerBase
 {
     private readonly ISender _sender;
@@ -145,11 +147,6 @@ public class ConfigurationController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> UpdateConfiguration(string key, [FromBody] UpdateConfigurationDto dto)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
         var command = new UpdateConfigurationCommand
         {
             Key = key,

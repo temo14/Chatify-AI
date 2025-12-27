@@ -5,6 +5,7 @@ using ChatAI.Application.Features.Feedback.GetFeedbackList;
 using ChatAI.Application.Features.Feedback.GetFeedbackStats;
 using ChatAI.Application.Features.Feedback.SubmitFeedback;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatAI.Api.Controllers;
@@ -16,6 +17,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class FeedbackController : ControllerBase
 {
     private readonly ISender _sender;
@@ -39,11 +41,6 @@ public class FeedbackController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> SubmitFeedback(Guid messageId, [FromBody] SubmitFeedbackDto dto)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
         var command = new SubmitFeedbackCommand
         {
             MessageId = messageId,

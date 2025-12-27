@@ -3,6 +3,7 @@ using ChatAI.Application.Features.Chat.GetConversationHistory;
 using ChatAI.Application.Features.Chat.SendMessage;
 using ChatAI.Application.Features.Session.GetUserSessions;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ChatAI.Api.Controllers;
@@ -14,6 +15,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
+[Authorize]
 public class ChatController : ControllerBase
 {
     private readonly ISender _sender;
@@ -39,11 +41,6 @@ public class ChatController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> SendMessage([FromBody] ChatRequestDto dto)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
         _logger.LogInformation("Chat request - UserId: {UserId}, SessionId: {SessionId}", 
             dto.UserId ?? "anonymous", dto.SessionId ?? "new");
     

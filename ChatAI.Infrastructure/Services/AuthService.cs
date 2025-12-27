@@ -44,13 +44,17 @@ public class AuthService : IAuthService
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         
-        var claims = new[]
+        // Determine role: PlatformAdmin (Dott staff) or TenantAdmin (customer)
+        var role = user.IsPlatformAdmin ? "PlatformAdmin" : "TenantAdmin";
+        
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
             new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim(ClaimTypes.Role, "Admin")
+            new Claim(ClaimTypes.Role, role),
+            new Claim("tenant_id", user.TenantId.ToString())
         };
         
         var expirationMinutes = rememberMe 
@@ -60,7 +64,7 @@ public class AuthService : IAuthService
         var token = new JwtSecurityToken(
             issuer: _jwtOptions.Issuer,
             audience: _jwtOptions.Audience,
-            claims: claims,
+            claims: claims.ToArray(),
             expires: DateTime.UtcNow.AddMinutes(expirationMinutes),
             signingCredentials: credentials
         );
@@ -96,5 +100,21 @@ public class AuthService : IAuthService
         {
             return null;
         }
+    }
+    
+    public Claim[] CreateUserClaims(AdminUser user)
+    {
+        // Determine role: PlatformAdmin (Dott staff) or TenantAdmin (customer)
+        var role = user.IsPlatformAdmin ? "PlatformAdmin" : "TenantAdmin";
+        
+        return new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Username),
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Email, user.Email ?? string.Empty),
+            new Claim(ClaimTypes.Role, role),
+            new Claim("tenant_id", user.TenantId.ToString()),
+            new Claim("user_id", user.Id.ToString())
+        };
     }
 }

@@ -12,5 +12,4 @@ public interface IApiKeyRepository
     Task<List<ApiKey>> GetAllAsync(bool includeInactive = false, CancellationToken cancellationToken = default);
     Task<ApiKey> CreateAsync(ApiKey apiKey, CancellationToken cancellationToken = default);
     Task UpdateAsync(ApiKey apiKey, CancellationToken cancellationToken = default);
-    Task<bool> ClientIdExistsAsync(string clientId, CancellationToken cancellationToken = default);
 }

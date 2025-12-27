@@ -45,14 +45,14 @@ public class ValidateApiKeyQueryHandler : IRequestHandler<ValidateApiKeyQuery, A
         // Check if key is active
         if (!apiKey.IsActive)
         {
-            _logger.LogWarning("API key validation failed: Key inactive - {ClientId}", apiKey.ClientId);
+            _logger.LogWarning("API key validation failed: Key inactive - Tenant: {TenantId}", apiKey.TenantId);
             return null;
         }
         
         // Check if key has expired
         if (apiKey.ExpiresAt.HasValue && apiKey.ExpiresAt.Value < DateTime.UtcNow)
         {
-            _logger.LogWarning("API key validation failed: Key expired - {ClientId}", apiKey.ClientId);
+            _logger.LogWarning("API key validation failed: Key expired - Tenant: {TenantId}", apiKey.TenantId);
             return null;
         }
         
@@ -61,7 +61,7 @@ public class ValidateApiKeyQueryHandler : IRequestHandler<ValidateApiKeyQuery, A
         apiKey.UsageCount++;
         await _apiKeyRepository.UpdateAsync(apiKey, cancellationToken);
         
-        _logger.LogInformation("API key validated successfully: {ClientId}", apiKey.ClientId);
+        _logger.LogInformation("API key validated successfully for Tenant: {TenantId}", apiKey.TenantId);
         
         return apiKey;
     }

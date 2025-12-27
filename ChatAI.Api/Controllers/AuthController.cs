@@ -1,4 +1,6 @@
+using ChatAI.Api.Attributes;
 using ChatAI.Api.DTOs;
+using ChatAI.Application.Features.AdminUsers.ResetPassword;
 using ChatAI.Application.Features.Auth.CreateApiKey;
 using ChatAI.Application.Features.Auth.GetApiKeys;
 using ChatAI.Application.Features.Auth.Login;
@@ -14,6 +16,7 @@ namespace ChatAI.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class AuthController : ControllerBase
 {
     private readonly IMediator _mediator;
@@ -56,8 +59,10 @@ public class AuthController : ControllerBase
         {
             new Claim(ClaimTypes.NameIdentifier, result.Username),
             new Claim(ClaimTypes.Name, result.Username),
-            new Claim(ClaimTypes.Email, result.Email ?? ""),
-            new Claim(ClaimTypes.Role, "Admin")
+            new Claim(ClaimTypes.Email, result.Email ?? string.Empty),
+            new Claim(ClaimTypes.Role, result.Role),
+            new Claim("tenant_id", result.TenantId.ToString()),
+            new Claim("user_id", result.UserId.ToString())
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
@@ -81,7 +86,7 @@ public class AuthController : ControllerBase
     /// Admin logout endpoint
     /// </summary>
     [HttpPost("logout")]
-    [Authorize(Policy = "Admin")]
+    [TenantAdmin]
     public async Task<IActionResult> Logout()
     {
         await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
@@ -93,15 +98,31 @@ public class AuthController : ControllerBase
     /// Get current user info
     /// </summary>
     [HttpGet("me")]
-    [Authorize(Policy = "Admin")]
+    [TenantAdmin]
     public IActionResult GetCurrentUser()
     {
+        var role = User.FindFirst(ClaimTypes.Role)?.Value ?? "Unknown";
+        var tenantId = User.FindFirst("tenant_id")?.Value;
+        var userId = User.FindFirst("user_id")?.Value;
+        
         return Ok(new
         {
+            userId = userId,
             username = User.Identity?.Name,
             email = User.FindFirst(ClaimTypes.Email)?.Value,
-            role = User.FindFirst(ClaimTypes.Role)?.Value,
-            isAuthenticated = User.Identity?.IsAuthenticated ?? false
+            role = role,
+            tenantId = tenantId,
+            isPlatformAdmin = role == "PlatformAdmin",
+            isTenantAdmin = role == "TenantAdmin",
+            isAuthenticated = User.Identity?.IsAuthenticated ?? false,
+            permissions = new
+            {
+                canManageTenants = role == "PlatformAdmin",
+                canManageGlobalConfig = role == "PlatformAdmin",
+                canManageKnowledgeBase = true, // Both roles
+                canManageChatSettings = true, // Both roles
+                canViewAnalytics = true // Both roles
+            }
         });
     }
 
@@ -109,11 +130,19 @@ public class AuthController : ControllerBase
     /// Create a new API key (Admin only)
     /// </summary>
     [HttpPost("api-keys")]
-    [Authorize(Policy = "Admin")]
+    [TenantAdmin]
     public async Task<ActionResult<ApiKeyResponseDto>> CreateApiKey([FromBody] CreateApiKeyDto request)
     {
-        // Get admin user ID from claims
-        var username = User.Identity?.Name ?? "system";
+        // Get admin user ID from JWT claims (Sub claim contains user ID)
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var adminUserId = Guid.TryParse(userIdClaim, out var parsedId) ? parsedId : Guid.Empty;
+        
+        // Get tenant ID from JWT claims (required for tenant-scoped API keys)
+        var tenantIdClaim = User.FindFirst("tenant_id")?.Value;
+        if (string.IsNullOrEmpty(tenantIdClaim) || !Guid.TryParse(tenantIdClaim, out var tenantId))
+        {
+            return BadRequest(new { message = "Invalid tenant context. Admin must be associated with a tenant." });
+        }
         
         var command = new CreateApiKeyCommand
         {
@@ -122,7 +151,8 @@ public class AuthController : ControllerBase
             RateLimitPerMinute = request.RateLimitPerMinute,
             RateLimitPerDay = request.RateLimitPerDay,
             ExpiresAt = request.ExpiresAt,
-            CreatedBy = Guid.Empty // TODO: Get actual admin user ID from claims
+            CreatedBy = adminUserId,
+            TenantId = tenantId
         };
 
         var result = await _mediator.Send(command);
@@ -132,7 +162,7 @@ public class AuthController : ControllerBase
         {
             Id = result.Id,
             ClientName = result.ClientName,
-            ClientId = result.ClientId,
+            TenantId = result.TenantId,
             Description = result.Description,
             IsActive = result.IsActive,
             RateLimitPerMinute = result.RateLimitPerMinute,
@@ -144,7 +174,8 @@ public class AuthController : ControllerBase
             ApiKey = result.ApiKey
         };
 
-        _logger.LogInformation("API key created by {Username} for client: {ClientName}", username, request.ClientName);
+        _logger.LogInformation("API key created by admin {AdminUserId} for client: {ClientName}", 
+            adminUserId, request.ClientName);
 
         return Ok(response);
     }
@@ -153,7 +184,7 @@ public class AuthController : ControllerBase
     /// Get all API keys (Admin only)
     /// </summary>
     [HttpGet("api-keys")]
-    [Authorize(Policy = "Admin")]
+    [TenantAdmin]
     public async Task<ActionResult<List<ApiKeyResponseDto>>> GetApiKeys([FromQuery] bool includeInactive = false)
     {
         var query = new GetApiKeysQuery { IncludeInactive = includeInactive };
@@ -164,7 +195,7 @@ public class AuthController : ControllerBase
         {
             Id = k.Id,
             ClientName = k.ClientName,
-            ClientId = k.ClientId,
+            TenantId = k.TenantId,
             Description = k.Description,
             IsActive = k.IsActive,
             RateLimitPerMinute = k.RateLimitPerMinute,
@@ -183,13 +214,17 @@ public class AuthController : ControllerBase
     /// Revoke an API key (Admin only)
     /// </summary>
     [HttpDelete("api-keys/{keyId}")]
-    [Authorize(Policy = "Admin")]
+    [TenantAdmin]
     public async Task<IActionResult> RevokeApiKey(Guid keyId)
     {
+        // Get admin user ID from JWT claims (Sub claim contains user ID)
+        var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var adminUserId = Guid.TryParse(userIdClaim, out var parsedId) ? parsedId : Guid.Empty;
+        
         var command = new RevokeApiKeyCommand
         {
             KeyId = keyId,
-            RevokedBy = Guid.Empty // TODO: Get actual admin user ID from claims
+            RevokedBy = adminUserId
         };
 
         var result = await _mediator.Send(command);
@@ -201,5 +236,20 @@ public class AuthController : ControllerBase
         }
 
         return NotFound(new { message = "API key not found" });
+    }
+
+    /// <summary>
+    /// Reset user password (Platform Admin only)
+    /// </summary>
+    [HttpPost("reset-password/{userId}")]
+    [PlatformAdmin]
+    public async Task<ActionResult> ResetUserPassword(Guid userId, [FromBody] ResetPasswordDto request)
+    {
+        await _mediator.Send(new ResetUserPasswordCommand 
+        { 
+            UserId = userId, 
+            NewPassword = request.NewPassword 
+        });
+        return Ok(new { message = "Password reset successfully" });
     }
 }

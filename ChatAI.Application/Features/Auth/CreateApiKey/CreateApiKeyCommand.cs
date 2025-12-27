@@ -13,4 +13,5 @@ public class CreateApiKeyCommand : IRequest<ApiKeyResult>
     public int RateLimitPerDay { get; set; } = 1000;
     public DateTime? ExpiresAt { get; set; }
     public Guid CreatedBy { get; set; }
+    public Guid TenantId { get; set; } // Tenant context for the API key
 }
