@@ -38,9 +38,16 @@ public class KnowledgeDocument
     
     /// <summary>
     /// Reference to vector embedding in Qdrant (for semantic search)
-    /// Format: "qdrant:{documentId}" or vector DB reference
+    /// Format: "qdrant:{documentId}" or "sql:{documentId}"
     /// </summary>
     public string? EmbeddingReference { get; set; }
+    
+    /// <summary>
+    /// Actual embedding data for SQL storage mode (JSON serialized)
+    /// Only used when VectorStorageMode = "InMemory" (SQL-based)
+    /// NULL when using Qdrant (embedding stored externally)
+    /// </summary>
+    public string? EmbeddingData { get; set; }
     
     /// <summary>
     /// When this document was added

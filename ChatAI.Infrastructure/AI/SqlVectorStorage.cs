@@ -47,7 +47,7 @@ public class SqlVectorStorage : IVectorStorage
             throw new InvalidOperationException($"Document {documentId} not found for tenant {_tenantId}");
         }
 
-        // Store embedding as JSON in EmbeddingReference field
+        // Store embedding as JSON in EmbeddingData field (separate from reference)
         var embeddingJson = JsonSerializer.Serialize(new
         {
             vector = embedding,
@@ -55,7 +55,8 @@ public class SqlVectorStorage : IVectorStorage
             storage = "sql"
         });
 
-        doc.EmbeddingReference = embeddingJson;
+        doc.EmbeddingData = embeddingJson; // Store in dedicated column
+        doc.EmbeddingReference = $"sql:{documentId}"; // Small reference string
         doc.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
@@ -72,8 +73,8 @@ public class SqlVectorStorage : IVectorStorage
     {
         // Load all documents with embeddings for this tenant
         var documents = await _context.KnowledgeDocuments
-            .Where(d => d.TenantId == _tenantId && d.IsActive && d.EmbeddingReference != null)
-            .Select(d => new { d.Id, d.EmbeddingReference })
+            .Where(d => d.TenantId == _tenantId && d.IsActive && d.EmbeddingData != null)
+            .Select(d => new { d.Id, d.EmbeddingData })
             .ToListAsync(ct);
 
         if (!documents.Any())
@@ -88,7 +89,10 @@ public class SqlVectorStorage : IVectorStorage
         {
             try
             {
-                var embeddingData = JsonSerializer.Deserialize<EmbeddingData>(doc.EmbeddingReference!);
+                var embeddingData = JsonSerializer.Deserialize<EmbeddingData>(doc.EmbeddingData!, new JsonSerializerOptions 
+                { 
+                    PropertyNameCaseInsensitive = true 
+                });
                 if (embeddingData?.Vector != null)
                 {
                     var similarity = CosineSimilarity(queryEmbedding, embeddingData.Vector);
@@ -117,7 +121,8 @@ public class SqlVectorStorage : IVectorStorage
 
         if (doc != null)
         {
-            doc.EmbeddingReference = null;
+            doc.EmbeddingData = null; // Clear embedding data
+            doc.EmbeddingReference = null; // Clear reference
             doc.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(ct);
 
@@ -129,7 +134,7 @@ public class SqlVectorStorage : IVectorStorage
     public async Task<VectorStorageStats> GetStatsAsync(CancellationToken ct = default)
     {
         var count = await _context.KnowledgeDocuments
-            .Where(d => d.TenantId == _tenantId && d.EmbeddingReference != null)
+            .Where(d => d.TenantId == _tenantId && d.EmbeddingData != null)
             .CountAsync(ct);
 
         return new VectorStorageStats

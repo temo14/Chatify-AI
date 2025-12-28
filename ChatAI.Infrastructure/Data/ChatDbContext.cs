@@ -124,6 +124,7 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.Source).HasMaxLength(500);
             entity.Property(e => e.Category).HasMaxLength(100);
             entity.Property(e => e.EmbeddingReference).HasMaxLength(200);
+            entity.Property(e => e.EmbeddingData).HasColumnType("nvarchar(max)"); // Full embedding JSON for SQL mode
             entity.Property(e => e.CreatedAt).IsRequired();
             entity.Property(e => e.UpdatedAt);
             entity.Property(e => e.MetadataJson).HasColumnType("nvarchar(max)"); // JSON
