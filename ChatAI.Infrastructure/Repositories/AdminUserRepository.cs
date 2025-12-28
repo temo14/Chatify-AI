@@ -35,6 +35,14 @@ public class AdminUserRepository : IAdminUserRepository
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
     }
+    
+    public async Task<AdminUser?> GetByUsernameAndTenantAsync(string username, Guid tenantId, CancellationToken cancellationToken = default)
+    {
+        // Get admin user by username AND tenant ID (prevents cross-tenant collision)
+        return await _context.AdminUsers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Username == username && u.TenantId == tenantId, cancellationToken);
+    }
 
     public async Task<AdminUser?> GetByTenantIdAsync(Guid tenantId, CancellationToken cancellationToken = default)
     {

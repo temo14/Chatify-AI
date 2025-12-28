@@ -56,7 +56,7 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             {
                 new Claim(ClaimTypes.NameIdentifier, validatedKey.Id.ToString()),
                 new Claim(ClaimTypes.Name, validatedKey.ClientName),
-                new Claim("tenant_id", validatedKey.TenantId),
+                new Claim("tenant_id", validatedKey.TenantId.ToString()),
                 new Claim(ClaimTypes.Role, "Client")
             };
             

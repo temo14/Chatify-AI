@@ -37,6 +37,7 @@ public class AuthController : ControllerBase
     {
         var command = new LoginCommand
         {
+            Slug = request.Slug,
             Username = request.Username,
             Password = request.Password,
             RememberMe = request.RememberMe

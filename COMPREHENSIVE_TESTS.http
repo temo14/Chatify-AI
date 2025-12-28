@@ -1,0 +1,439 @@
+# COMPREHENSIVE API TESTING FOR CHATIFY AI
+# This file tests all endpoints and multi-tenancy isolation
+# Prerequisites: Application running, database seeded
+
+### Variables
+@baseUrl = http://localhost:5000
+@tenantASlug = dott
+@tenantBSlug = testclient
+@adminUsername = admin
+@adminPassword = Admin@123456
+
+###############################################################################
+# SECTION 1: TENANT A - ADMIN AUTHENTICATION
+###############################################################################
+
+### 1.1 Login as Tenant A Admin (Should succeed)
+# @name loginTenantA
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "slug": "{{tenantASlug}}",
+  "username": "{{adminUsername}}",
+  "password": "{{adminPassword}}"
+}
+
+###
+
+@tokenA = {{loginTenantA.response.body.token}}
+@tenantAId = {{loginTenantA.response.body.tenantId}}
+
+### 1.2 Get Current User (Tenant A)
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{tokenA}}
+
+### 1.3 Login with WRONG slug (Should fail - user not found)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "slug": "wrongslug",
+  "username": "{{adminUsername}}",
+  "password": "{{adminPassword}}"
+}
+
+### 1.4 Login with WRONG password (Should fail - invalid credentials)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "slug": "{{tenantASlug}}",
+  "username": "{{adminUsername}}",
+  "password": "WrongPassword123"
+}
+
+###############################################################################
+# SECTION 2: TENANT A - API KEY MANAGEMENT
+###############################################################################
+
+### 2.1 Create API Key for Tenant A
+# @name createApiKeyA
+POST {{baseUrl}}/api/auth/api-keys
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "clientName": "Tenant A Mobile App",
+  "description": "Test API key for Tenant A",
+  "rateLimitPerMinute": 30,
+  "rateLimitPerDay": 2000
+}
+
+###
+
+@apiKeyA = {{createApiKeyA.response.body.apiKey}}
+
+### 2.2 List API Keys (Tenant A)
+GET {{baseUrl}}/api/auth/api-keys
+Authorization: Bearer {{tokenA}}
+
+### 2.3 Test API Key Authentication (Tenant A)
+GET {{baseUrl}}/api/auth/me
+X-API-Key: {{apiKeyA}}
+
+###############################################################################
+# SECTION 3: TENANT B - CREATE AND AUTHENTICATE
+###############################################################################
+
+### 3.1 Create Tenant B (As Platform Admin from Tenant A)
+# @name createTenantB
+POST {{baseUrl}}/api/tenant
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "slug": "{{tenantBSlug}}",
+  "name": "Test Client B",
+  "email": "admin@testclient.com",
+  "planTier": "Basic",
+  "adminUsername": "admin",
+  "adminPassword": "Admin@123456",
+  "adminEmail": "admin@testclient.com",
+  "adminFullName": "Test Client Admin"
+}
+
+###
+
+@tenantBId = {{createTenantB.response.body.id}}
+
+### 3.2 Login as Tenant B Admin
+# @name loginTenantB
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "slug": "{{tenantBSlug}}",
+  "username": "admin",
+  "password": "Admin@123456"
+}
+
+###
+
+@tokenB = {{loginTenantB.response.body.token}}
+
+### 3.3 Create API Key for Tenant B
+# @name createApiKeyB
+POST {{baseUrl}}/api/auth/api-keys
+Authorization: Bearer {{tokenB}}
+Content-Type: application/json
+
+{
+  "clientName": "Tenant B Mobile App",
+  "description": "Test API key for Tenant B",
+  "rateLimitPerMinute": 20,
+  "rateLimitPerDay": 1000
+}
+
+###
+
+@apiKeyB = {{createApiKeyB.response.body.apiKey}}
+
+###############################################################################
+# SECTION 4: KNOWLEDGE ISOLATION TESTING
+###############################################################################
+
+### 4.1 Tenant A - Upload Document
+# @name addDocA
+POST {{baseUrl}}/api/knowledge
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "title": "Tenant A Product Guide",
+  "content": "This is Tenant A's exclusive product documentation. Features: Advanced analytics, custom dashboards, priority support.",
+  "source": "internal",
+  "category": "Product",
+  "isActive": true
+}
+
+###
+
+@docAId = {{addDocA.response.body.id}}
+
+### 4.2 Tenant B - Upload Document
+# @name addDocB
+POST {{baseUrl}}/api/knowledge
+Authorization: Bearer {{tokenB}}
+Content-Type: application/json
+
+{
+  "title": "Tenant B Service Manual",
+  "content": "This is Tenant B's service documentation. Our services include: Basic support, standard features, monthly billing.",
+  "source": "internal",
+  "category": "Services",
+  "isActive": true
+}
+
+###
+
+@docBId = {{addDocB.response.body.id}}
+
+### 4.3 Tenant A - List Documents (Should ONLY see Tenant A's docs)
+GET {{baseUrl}}/api/knowledge
+Authorization: Bearer {{tokenA}}
+
+### 4.4 Tenant B - List Documents (Should ONLY see Tenant B's docs)
+GET {{baseUrl}}/api/knowledge
+Authorization: Bearer {{tokenB}}
+
+### 4.5 Tenant B - Try to access Tenant A's document (Should FAIL - 404)
+GET {{baseUrl}}/api/knowledge/{{docAId}}
+Authorization: Bearer {{tokenB}}
+
+### 4.6 Tenant A - Try to access Tenant B's document (Should FAIL - 404)
+GET {{baseUrl}}/api/knowledge/{{docBId}}
+Authorization: Bearer {{tokenA}}
+
+### 4.7 Tenant A - Search Knowledge
+POST {{baseUrl}}/api/knowledge/search
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "query": "product features",
+  "topK": 3
+}
+
+### 4.8 Tenant B - Search Knowledge (Should NOT find Tenant A's docs)
+POST {{baseUrl}}/api/knowledge/search
+Authorization: Bearer {{tokenB}}
+Content-Type: application/json
+
+{
+  "query": "product features",
+  "topK": 3
+}
+
+###############################################################################
+# SECTION 5: CHAT SESSION ISOLATION TESTING
+###############################################################################
+
+### 5.1 Tenant A - Send Chat Message (via API Key)
+# @name chatA
+POST {{baseUrl}}/api/chat
+X-API-Key: {{apiKeyA}}
+Content-Type: application/json
+
+{
+  "message": "Tell me about the advanced analytics feature",
+  "userId": "user-a-1"
+}
+
+###
+
+@sessionAId = {{chatA.response.body.sessionId}}
+
+### 5.2 Tenant B - Send Chat Message (via API Key)
+# @name chatB
+POST {{baseUrl}}/api/chat
+X-API-Key: {{apiKeyB}}
+Content-Type: application/json
+
+{
+  "message": "What billing options do you offer?",
+  "userId": "user-b-1"
+}
+
+###
+
+@sessionBId = {{chatB.response.body.sessionId}}
+
+### 5.3 Tenant A - Get Session History
+GET {{baseUrl}}/api/session/{{sessionAId}}
+X-API-Key: {{apiKeyA}}
+
+### 5.4 Tenant B - Try to access Tenant A's session (Should FAIL - 404)
+GET {{baseUrl}}/api/session/{{sessionAId}}
+X-API-Key: {{apiKeyB}}
+
+### 5.5 Tenant A - Try to access Tenant B's session (Should FAIL - 404)
+GET {{baseUrl}}/api/session/{{sessionBId}}
+X-API-Key: {{apiKeyA}}
+
+### 5.6 Tenant A - List Sessions (Should ONLY see Tenant A's sessions)
+GET {{baseUrl}}/api/session/user/user-a-1
+X-API-Key: {{apiKeyA}}
+
+### 5.7 Tenant B - List Sessions (Should ONLY see Tenant B's sessions)
+GET {{baseUrl}}/api/session/user/user-b-1
+X-API-Key: {{apiKeyB}}
+
+###############################################################################
+# SECTION 6: FEEDBACK ISOLATION TESTING
+###############################################################################
+
+### 6.1 Tenant A - Submit Feedback
+POST {{baseUrl}}/api/feedback/messages/{{sessionAId}}
+X-API-Key: {{apiKeyA}}
+Content-Type: application/json
+
+{
+  "userId": "user-a-1",
+  "sessionId": "{{sessionAId}}",
+  "rating": 1,
+  "comment": "Very helpful!",
+  "category": "Helpful"
+}
+
+### 6.2 Tenant B - Submit Feedback
+POST {{baseUrl}}/api/feedback/messages/{{sessionBId}}
+X-API-Key: {{apiKeyB}}
+Content-Type: application/json
+
+{
+  "userId": "user-b-1",
+  "sessionId": "{{sessionBId}}",
+  "rating": -1,
+  "comment": "Not what I expected",
+  "category": "Unhelpful"
+}
+
+### 6.3 Tenant A - Get Feedback Stats (Should ONLY see Tenant A's stats)
+GET {{baseUrl}}/api/feedback/stats
+Authorization: Bearer {{tokenA}}
+
+### 6.4 Tenant B - Get Feedback Stats (Should ONLY see Tenant B's stats)
+GET {{baseUrl}}/api/feedback/stats
+Authorization: Bearer {{tokenB}}
+
+###############################################################################
+# SECTION 7: TENANT SETTINGS ISOLATION
+###############################################################################
+
+### 7.1 Tenant A - Get Current Settings
+GET {{baseUrl}}/api/tenant/settings
+Authorization: Bearer {{tokenA}}
+
+### 7.2 Tenant B - Get Current Settings
+GET {{baseUrl}}/api/tenant/settings
+Authorization: Bearer {{tokenB}}
+
+### 7.3 Tenant A - Update Settings
+PUT {{baseUrl}}/api/tenant/settings
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "welcomeMessage": "Welcome to Tenant A! We offer premium features.",
+  "temperature": 0.8,
+  "maxTokens": 2500
+}
+
+### 7.4 Tenant B - Update Settings
+PUT {{baseUrl}}/api/tenant/settings
+Authorization: Bearer {{tokenB}}
+Content-Type: application/json
+
+{
+  "welcomeMessage": "Welcome to Tenant B! Basic plan features available.",
+  "temperature": 0.5,
+  "maxTokens": 1500
+}
+
+### 7.5 Verify Tenant A settings unchanged by Tenant B
+GET {{baseUrl}}/api/tenant/settings
+Authorization: Bearer {{tokenA}}
+
+###############################################################################
+# SECTION 8: AUTHORIZATION TESTING
+###############################################################################
+
+### 8.1 Tenant B Admin - Try to list ALL tenants (Should FAIL - not PlatformAdmin)
+GET {{baseUrl}}/api/tenant
+Authorization: Bearer {{tokenB}}
+
+### 8.2 Tenant A Admin (PlatformAdmin) - List ALL tenants (Should SUCCEED)
+GET {{baseUrl}}/api/tenant
+Authorization: Bearer {{tokenA}}
+
+### 8.3 Unauthenticated - Try to access protected endpoint (Should FAIL - 401)
+GET {{baseUrl}}/api/knowledge
+
+###############################################################################
+# SECTION 9: EDGE CASES & ERROR HANDLING
+###############################################################################
+
+### 9.1 Invalid JSON
+POST {{baseUrl}}/api/chat
+X-API-Key: {{apiKeyA}}
+Content-Type: application/json
+
+{
+  "message": "test",
+  "invalid
+
+### 9.2 Missing Required Field
+POST {{baseUrl}}/api/knowledge
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "title": "Missing Content Field"
+}
+
+### 9.3 Invalid API Key
+GET {{baseUrl}}/api/session/list
+X-API-Key: invalid-key-12345
+
+### 9.4 Expired/Invalid JWT Token
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer invalid.jwt.token
+
+### 9.5 SQL Injection Attempt (Should be sanitized)
+POST {{baseUrl}}/api/knowledge/search
+Authorization: Bearer {{tokenA}}
+Content-Type: application/json
+
+{
+  "query": "'; DROP TABLE KnowledgeDocuments; --",
+  "topK": 3
+}
+
+###############################################################################
+# SECTION 10: RAG END-TO-END TESTING
+###############################################################################
+
+### 10.1 Tenant A - Chat with RAG (Should find Tenant A's docs)
+POST {{baseUrl}}/api/chat
+X-API-Key: {{apiKeyA}}
+Content-Type: application/json
+
+{
+  "message": "Tell me about analytics and dashboards",
+  "userId": "rag-test-user-a"
+}
+
+### 10.2 Tenant B - Chat with RAG (Should find Tenant B's docs, NOT Tenant A's)
+POST {{baseUrl}}/api/chat
+X-API-Key: {{apiKeyB}}
+Content-Type: application/json
+
+{
+  "message": "What are your service offerings?",
+  "userId": "rag-test-user-b"
+}
+
+###############################################################################
+# TEST COMPLETION
+###############################################################################
+
+### EXPECTED RESULTS SUMMARY:
+# ✓ Tenant A can only access Tenant A's data
+# ✓ Tenant B can only access Tenant B's data
+# ✓ Cross-tenant access attempts return 404
+# ✓ Invalid credentials/tokens return 401
+# ✓ Missing permissions return 403
+# ✓ Invalid data returns 400
+# ✓ RAG returns tenant-specific documents only
+# ✓ All endpoints enforce multi-tenancy

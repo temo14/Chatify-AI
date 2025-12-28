@@ -9,6 +9,7 @@ public interface IAdminUserRepository
 {
     Task<AdminUser?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<AdminUser?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
+    Task<AdminUser?> GetByUsernameAndTenantAsync(string username, Guid tenantId, CancellationToken cancellationToken = default);
     Task<AdminUser?> GetByTenantIdAsync(Guid tenantId, CancellationToken cancellationToken = default);
     Task<AdminUser> CreateAsync(AdminUser user, CancellationToken cancellationToken = default);
     Task UpdateAsync(AdminUser user, CancellationToken cancellationToken = default);

@@ -72,3 +72,6 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+// Make the implicit Program class public so tests can reference it
+public partial class Program { }
