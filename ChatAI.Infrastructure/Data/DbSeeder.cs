@@ -2,6 +2,8 @@ using ChatAI.Domain.Interfaces.Repositories;
 using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Enums;
+using ChatAI.Infrastructure.Interfaces;
+using OpenAI.Embeddings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -71,30 +73,61 @@ public class DbSeeder
             {
                 try
                 {
+                    await Task.Delay(5000); // Wait for app startup to complete
+                    
                     using var scope = _serviceProvider.CreateScope();
-                    var knowledgeRepo = scope.ServiceProvider.GetRequiredService<IKnowledgeRepository>();
+                    var embeddingClient = scope.ServiceProvider.GetRequiredService<EmbeddingClient>();
+                    var vectorStorageFactory = scope.ServiceProvider.GetRequiredService<IVectorStorageFactory>();
                     var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
                     
                     // Set tenant context for Dott tenant
                     tenantContext.SetTenant(dottTenant.Id, dottTenant.Slug);
                     
-                    var docs = await knowledgeRepo.GetAllAsync();
-                    var docsWithoutEmbeddings = docs.Where(d => string.IsNullOrEmpty(d.EmbeddingReference)).ToList();
-                    
-                    if (docsWithoutEmbeddings.Any())
+                    // Get document IDs first
+                    List<Guid> docIds;
+                    using (var readContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>())
                     {
-                        _logger.LogInformation("Generating embeddings for {Count} demo documents (background task)...", docsWithoutEmbeddings.Count);
+                        docIds = await readContext.KnowledgeDocuments
+                            .Where(d => d.TenantId == dottTenant.Id && string.IsNullOrEmpty(d.EmbeddingReference))
+                            .Select(d => d.Id)
+                            .ToListAsync();
+                    }
+                    
+                    if (docIds.Any())
+                    {
+                        _logger.LogInformation("Generating embeddings for {Count} demo documents (background task)...", docIds.Count);
                         
-                        foreach (var doc in docsWithoutEmbeddings)
+                        var vectorStorage = await vectorStorageFactory.CreateForCurrentTenantAsync();
+                        
+                        foreach (var docId in docIds)
                         {
                             try
                             {
-                                await knowledgeRepo.UpdateAsync(doc);
+                                // Use fresh context for each document to avoid tracking issues
+                                using var docContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
+                                var doc = await docContext.KnowledgeDocuments.FindAsync(docId);
+                                if (doc == null) continue;
+                                
+                                var embeddingResponse = await embeddingClient.GenerateEmbeddingAsync(doc.Content);
+                                var embedding = embeddingResponse.Value.ToFloats().ToArray();
+                                
+                                var metadata = new Dictionary<string, object>
+                                {
+                                    { "title", doc.Title },
+                                    { "category", doc.Category ?? "general" },
+                                    { "source", doc.Source ?? "unknown" }
+                                };
+                                
+                                await vectorStorage.StoreEmbeddingAsync(doc.Id, embedding, metadata);
+                                
+                                doc.EmbeddingReference = $"vector:{doc.Id}";
+                                await docContext.SaveChangesAsync();
+                                
                                 _logger.LogDebug("✓ Generated embedding for: {Title}", doc.Title);
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Failed to generate embedding for document {Id}", doc.Id);
+                                _logger.LogWarning(ex, "Failed to generate embedding for document {Id}", docId);
                             }
                         }
                         

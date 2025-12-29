@@ -24,25 +24,25 @@ services:
     restart: unless-stopped
 
   # Qdrant vector database for RAG
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: chatify-qdrant
-    ports:
-      - "6333:6333"  # REST API
-      - "6334:6334"  # gRPC API
-    volumes:
-      - qdrant-data:/qdrant/storage
-    networks:
-      - chatify-network
-    environment:
-      - QDRANT__SERVICE__GRPC_PORT=6334
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
-    restart: unless-stopped
+  # qdrant:
+  #   image: qdrant/qdrant:latest
+  #   container_name: chatify-qdrant
+  #   ports:
+  #     - "6333:6333"  # REST API
+  #     - "6334:6334"  # gRPC API
+  #   volumes:
+  #     - qdrant-data:/qdrant/storage
+  #   networks:
+  #     - chatify-network
+  #   environment:
+  #     - QDRANT__SERVICE__GRPC_PORT=6334
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+  #     start_period: 10s
+  #   restart: unless-stopped
 
   # Chatify AI API
   chatify-api:
@@ -62,24 +62,16 @@ services:
       - AzureOpenAI__Temperature=${AZURE_OPENAI_TEMPERATURE:-0.7}
       - Chat__MaxToolCalls=${CHAT_MAX_TOOL_CALLS:-5}
       - Chat__MaxConversationHistory=${CHAT_MAX_HISTORY:-20}
-      - Qdrant__Endpoint=http://qdrant:6333
-      - Qdrant__CollectionName=${QDRANT_COLLECTION:-knowledge-base}
-      - Qdrant__VectorSize=${QDRANT_VECTOR_SIZE:-1536}
       - Cache__Enabled=${CACHE_ENABLED:-true}
       - Cache__ConversationExpirationMinutes=${CACHE_CONVERSATION_MINUTES:-60}
       - Cache__EmbeddingExpirationHours=${CACHE_EMBEDDING_HOURS:-24}
       - Resilience__Enabled=${RESILIENCE_ENABLED:-true}
       - Resilience__RetryCount=${RESILIENCE_RETRY_COUNT:-3}
       - Resilience__TimeoutSeconds=${RESILIENCE_TIMEOUT_SECONDS:-30}
-      - ApiKeys__demo-user=${API_KEY_DEMO:-demo-key-12345}
-      - ApiKeys__test-user=${API_KEY_TEST:-test-key-67890}
-      - ApiKeys__admin-user=${API_KEY_ADMIN:-admin-key-abcdef}
     ports:
       - "5000:8080"
     depends_on:
       sqlserver:
-        condition: service_healthy
-      qdrant:
         condition: service_healthy
     networks:
       - chatify-network
@@ -103,8 +95,6 @@ services:
 
 volumes:
   sqlserver-data:
-    driver: local
-  qdrant-data:
     driver: local
   api-logs:
     driver: local

@@ -60,8 +60,9 @@ public static class ServiceCollectionExtensions
             configuration.GetSection(AzureOpenAIOptions.SectionName));
         services.Configure<ChatOptions>(
             configuration.GetSection(ChatOptions.SectionName));
-        services.Configure<QdrantOptions>(
-            configuration.GetSection(QdrantOptions.SectionName));
+        // Qdrant disabled - using SQL vector storage only
+        // services.Configure<QdrantOptions>(
+        //     configuration.GetSection(QdrantOptions.SectionName));
         services.Configure<ResilienceOptions>(
             configuration.GetSection("Resilience"));
         services.Configure<CacheOptions>(
@@ -211,9 +212,9 @@ public static class ServiceCollectionExtensions
             tags: new[] { "database", "sql" });
 
         // Qdrant health check
-        healthChecks.AddCheck<QdrantHealthCheck>(
-            "qdrant",
-            tags: new[] { "vector", "qdrant" });
+        //healthChecks.AddCheck<QdrantHealthCheck>(
+        //    "qdrant",
+        //    tags: new[] { "vector", "qdrant" });
 
         // Azure OpenAI health check
         healthChecks.AddCheck(

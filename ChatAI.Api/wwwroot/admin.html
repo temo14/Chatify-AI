@@ -215,6 +215,7 @@
                             </button>
                         </form>
 
+                        <!-- Qdrant Sync Section - DISABLED
                         <div id="qdrantSyncSection" class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
                             <button id="qdrantSyncButton" onclick="loadToQdrant(event)" class="btn-secondary w-full">
                                 <i class="fas fa-sync mr-2"></i> Sync to Qdrant
@@ -223,6 +224,7 @@
                                 Loads all documents to vector database
                             </p>
                         </div>
+                        -->
                     </div>
                 </div>
 
@@ -802,8 +804,8 @@
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Vector Storage Mode</label>
                     <select id="tenantVectorMode" class="form-input">
-                        <option value="SQL">SQL (< 100 docs, cost-effective)</option>
-                        <option value="Qdrant">Qdrant (> 100 docs, high performance)</option>
+                        <option value="SQL">SQL (All documents - simplified deployment)</option>
+                        <!-- <option value="Qdrant">Qdrant (> 100 docs, high performance)</option> DISABLED -->
                     </select>
                 </div>
 

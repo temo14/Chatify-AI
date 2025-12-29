@@ -56,9 +56,10 @@ public class VectorStorageFactory : IVectorStorageFactory
 
         return settings.VectorStorageMode.ToUpper() switch
         {
-            "QDRANT" => CreateQdrantVectorStorage(tenantId, settings.QdrantCollectionName),
+            //"QDRANT" => CreateQdrantVectorStorage(tenantId, settings.QdrantCollectionName),
             "SQL" => CreateSqlVectorStorage(tenantId),
-            _ => throw new NotSupportedException($"Vector storage mode '{settings.VectorStorageMode}' is not supported")
+            _ => CreateSqlVectorStorage(tenantId)
+            //_ => throw new NotSupportedException($"Vector storage mode '{settings.VectorStorageMode}' is not supported")
         };
     }
 
