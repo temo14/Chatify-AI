@@ -25,26 +25,29 @@ public class SemanticKernelChatService : IChatService
     private readonly Kernel _kernel;
     private readonly IChatCompletionService _chatCompletion;
     private readonly IChatSessionRepository _sessionRepository;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantRepository _tenantRepository;
     private readonly ChatContext _chatContext;
     private readonly ILogger<SemanticKernelChatService> _logger;
     private readonly ChatOptions _chatOptions;
-    private readonly IConfigurationService _configService;
 
     public SemanticKernelChatService(
         Kernel kernel,
         IChatSessionRepository sessionRepository,
+        ITenantContext tenantContext,
+        ITenantRepository tenantRepository,
         ChatContext chatContext,
         ILogger<SemanticKernelChatService> logger,
-        IOptions<ChatOptions> chatOptions,
-        IConfigurationService configService)
+        IOptions<ChatOptions> chatOptions)
     {
         _kernel = kernel;
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
         _sessionRepository = sessionRepository;
+        _tenantContext = tenantContext;
+        _tenantRepository = tenantRepository;
         _chatContext = chatContext;
         _logger = logger;
         _chatOptions = chatOptions.Value;
-        _configService = configService;
     }
 
     public async Task<ChatResponse> HandleAsync(ChatRequest request)
@@ -59,15 +62,22 @@ public class SemanticKernelChatService : IChatService
 
         _logger.LogInformation("🧠 [{Context}] Semantic Kernel processing request", _chatContext.GetContextInfo());
 
-        // Load AI settings from database configuration
-        var aiSettings = await _configService.GetAISettingsAsync();
+        // Load AI settings from tenant settings
+        var tenant = await _tenantRepository.GetByIdAsync(_tenantContext.RequiredTenantId);
+        var settings = tenant?.Settings;
+        
+        if (settings == null)
+        {
+            throw new InvalidOperationException("Tenant settings not found");
+        }
 
         // Load conversation history
         var history = await LoadHistoryAsync(session.Id);
         var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
 
-        // Add system message from configuration
-        chatHistory.AddSystemMessage(aiSettings.SystemPrompt);
+        // Add system message from tenant settings
+        var systemPrompt = settings.SystemPrompt ?? "You are a helpful AI assistant.";
+        chatHistory.AddSystemMessage(systemPrompt);
 
         // Add historical messages
         foreach (var msg in history)
@@ -84,23 +94,23 @@ public class SemanticKernelChatService : IChatService
         // Save user message
         await SaveMessageAsync(session.Id, request.Message, MessageRole.User);
 
-        // Configure AI execution settings with automatic tool calling from database config
-        var settings = new AzureOpenAIPromptExecutionSettings
+        // Configure AI execution settings with automatic tool calling from tenant settings
+        var executionSettings = new AzureOpenAIPromptExecutionSettings
         {
-            Temperature = aiSettings.Temperature,
-            MaxTokens = aiSettings.MaxTokens,
-            TopP = aiSettings.TopP,
-            FrequencyPenalty = aiSettings.FrequencyPenalty,
-            PresencePenalty = aiSettings.PresencePenalty,
+            Temperature = settings.Temperature,
+            MaxTokens = settings.MaxTokens,
+            TopP = 0.95,
+            FrequencyPenalty = 0.3,
+            PresencePenalty = 0.2,
             FunctionChoiceBehavior = FunctionChoiceBehavior.Auto()
         };
 
         _logger.LogDebug("[{Context}] Invoking chat completion (tools enabled: {ToolsEnabled}, temp: {Temp}, max tokens: {MaxTokens})", 
-            _chatContext.GetContextInfo(), request.UseTools, settings.Temperature, settings.MaxTokens);
+            _chatContext.GetContextInfo(), request.UseTools, executionSettings.Temperature, executionSettings.MaxTokens);
 
         var result = await _chatCompletion.GetChatMessageContentAsync(
             chatHistory,
-            settings,
+            executionSettings,
             _kernel);
 
         var reply = result.Content ?? "I couldn't generate a response.";

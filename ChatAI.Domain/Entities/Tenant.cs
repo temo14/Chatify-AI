@@ -20,7 +20,10 @@ public class Tenant
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Primary contact email
+    /// Primary business contact email for billing and platform communications
+    /// This is NOT the customer support email that end-users see
+    /// Used for: Invoices, subscription notifications, legal notices
+    /// Example: billing@musicstudio.com or owner@clinic.com
     /// </summary>
     public string Email { get; set; } = string.Empty;
 

@@ -13,44 +13,49 @@ public static class CacheKeyBuilder
 
     /// <summary>
     /// Generate cache key for embeddings based on content hash
+    /// Tenant-isolated to prevent cross-tenant embedding reuse
     /// </summary>
-    public static string EmbeddingFromContent(string content)
+    public static string EmbeddingFromContent(string content, Guid tenantId)
     {
         var contentHash = ComputeHash(content);
-        return $"{Prefix}:embedding:{contentHash}";
+        return $"{Prefix}:t:{tenantId}:embedding:{contentHash}";
     }
 
     /// <summary>
     /// Generate cache key for conversation history
+    /// Tenant-isolated to prevent cross-tenant session access
     /// </summary>
-    public static string ConversationHistory(string sessionId)
+    public static string ConversationHistory(string sessionId, Guid tenantId)
     {
-        return $"{Prefix}:history:{sessionId}";
+        return $"{Prefix}:t:{tenantId}:history:{sessionId}";
     }
 
     /// <summary>
     /// Generate cache key for knowledge search results
+    /// Tenant-isolated to prevent cross-tenant knowledge leakage
     /// </summary>
-    public static string KnowledgeSearch(string query, int limit)
+    public static string KnowledgeSearch(string query, int limit, Guid tenantId)
     {
         var queryHash = ComputeHash(query);
-        return $"{Prefix}:search:{queryHash}:{limit}";
+        return $"{Prefix}:t:{tenantId}:search:{queryHash}:{limit}";
     }
 
     /// <summary>
     /// Generate cache key for user sessions
+    /// Tenant-isolated to prevent cross-tenant user data access
     /// </summary>
-    public static string UserSessions(string userId)
+    public static string UserSessions(string userId, Guid tenantId)
     {
-        return $"{Prefix}:sessions:{userId}";
+        return $"{Prefix}:t:{tenantId}:sessions:{userId}";
     }
 
     /// <summary>
     /// Generate cache key for AI settings
+    /// Tenant-isolated to prevent shared configuration across tenants
     /// </summary>
-    public static string AISettings()
+    public static string AISettings(Guid tenantId)
     {
-        return $"{Prefix}:config:ai-settings";
+        return $"{Prefix}:t:{tenantId}:config:ai-settings";
     }
 
     /// <summary>

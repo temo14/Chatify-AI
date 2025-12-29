@@ -22,7 +22,7 @@ namespace ChatAI.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Produces("application/json")]
-[PlatformAdmin] 
+[Authorize] // Require authentication, specific roles defined per-endpoint
 public class TenantController : ControllerBase
 {
     private readonly ISender _sender;

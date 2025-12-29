@@ -65,6 +65,13 @@ public class TenantSettings
     /// <summary>
     /// Support email address where messages will be sent (if email support is enabled)
     /// </summary>
+    /// <summary>
+    /// Customer-facing support email where end-users can send inquiries
+    /// This is displayed to end-users in the chat interface
+    /// The AI will send support requests from customers to this email
+    /// Example: support@musicstudio.com or help@clinic.com
+    /// Different from Tenant.Email (business contact) and AdminUser.Email (individual admin)
+    /// </summary>
     public string? SupportEmail { get; set; }
 
     /// <summary>

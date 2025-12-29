@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace ChatAI.Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialCreate : Migration
+    public partial class InitialMigration : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -61,7 +61,7 @@ namespace ChatAI.Infrastructure.Migrations
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     KeyHash = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: false),
                     ClientName = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    ClientId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
+                    TenantId = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     Description = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     RateLimitPerMinute = table.Column<int>(type: "int", nullable: false, defaultValue: 20),
@@ -107,6 +107,7 @@ namespace ChatAI.Infrastructure.Migrations
                     Source = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     Category = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: true),
                     EmbeddingReference = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    EmbeddingData = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     MetadataJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
@@ -158,18 +159,11 @@ namespace ChatAI.Infrastructure.Migrations
                     SettingsJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     LastActivityAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    SubscriptionExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    AdminUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false)
+                    SubscriptionExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Tenants", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Tenants_AdminUsers_AdminUserId",
-                        column: x => x.AdminUserId,
-                        principalTable: "AdminUsers",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -217,6 +211,9 @@ namespace ChatAI.Infrastructure.Migrations
                     EnableChatHistory = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     ChatHistoryRetentionDays = table.Column<int>(type: "int", nullable: false, defaultValue: 90),
                     EnableFeedback = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
+                    EnableOverview = table.Column<bool>(type: "bit", nullable: false),
+                    EnableEmailSupport = table.Column<bool>(type: "bit", nullable: false),
+                    SupportEmail = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     WelcomeMessage = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
                     ChatPlaceholder = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true, defaultValue: "Ask me anything..."),
                     EnableTools = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
@@ -280,11 +277,6 @@ namespace ChatAI.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_ApiKeys_ClientId",
-                table: "ApiKeys",
-                column: "ClientId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_ApiKeys_CreatedAt",
                 table: "ApiKeys",
                 column: "CreatedAt");
@@ -299,6 +291,11 @@ namespace ChatAI.Infrastructure.Migrations
                 table: "ApiKeys",
                 column: "KeyHash",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ApiKeys_TenantId",
+                table: "ApiKeys",
+                column: "TenantId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ChatMessages_Session_Time",
@@ -426,11 +423,6 @@ namespace ChatAI.Infrastructure.Migrations
                 column: "TenantId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Tenants_AdminUserId",
-                table: "Tenants",
-                column: "AdminUserId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Tenants_CreatedAt",
                 table: "Tenants",
                 column: "CreatedAt");
@@ -477,6 +469,9 @@ namespace ChatAI.Infrastructure.Migrations
                 name: "AdminConfigurations");
 
             migrationBuilder.DropTable(
+                name: "AdminUsers");
+
+            migrationBuilder.DropTable(
                 name: "ApiKeys");
 
             migrationBuilder.DropTable(
@@ -496,9 +491,6 @@ namespace ChatAI.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "Tenants");
-
-            migrationBuilder.DropTable(
-                name: "AdminUsers");
         }
     }
 }

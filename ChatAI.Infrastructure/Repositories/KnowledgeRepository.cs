@@ -81,7 +81,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             {
                 _logger.LogDebug("Generating embedding for document: {Title}", entity.Title);
                 
-                var embeddingCacheKey = CacheKeyBuilder.EmbeddingFromContent(entity.Content);
+                var embeddingCacheKey = CacheKeyBuilder.EmbeddingFromContent(entity.Content, entity.TenantId);
                 var embedding = await _cacheService.GetOrCreateAsync(
                     embeddingCacheKey,
                     async () =>
@@ -90,6 +90,12 @@ public class KnowledgeRepository : IKnowledgeRepository
                         return response.Value.ToFloats().ToArray();
                     },
                     TimeSpan.FromHours(_cacheOptions.EmbeddingExpirationHours)).ConfigureAwait(false);
+                
+                // Add document to context FIRST, then store embedding
+                _context.KnowledgeDocuments.Add(entity);
+                await _context.SaveChangesAsync(ct);
+                
+                _logger.LogDebug("Document saved to database, now storing embedding...");
                 
                 // Store embedding using tenant-specific vector storage (SQL or Qdrant)
                 var vectorStorage = await _vectorStorageFactory.CreateForCurrentTenantAsync(ct);
@@ -104,11 +110,16 @@ public class KnowledgeRepository : IKnowledgeRepository
                 await vectorStorage.StoreEmbeddingAsync(entity.Id, embedding, metadata, ct);
                 entity.EmbeddingReference = $"stored:{entity.Id}"; // Generic reference
                 
+                // Save the embedding reference
+                await _context.SaveChangesAsync(ct);
+                
                 _logger.LogDebug("✓ Embedding stored in vector storage for tenant {TenantId}", entity.TenantId);
             }
-            
-            _context.KnowledgeDocuments.Add(entity);
-            await _context.SaveChangesAsync(ct);
+            else
+            {
+                _context.KnowledgeDocuments.Add(entity);
+                await _context.SaveChangesAsync(ct);
+            }
             
             _logger.LogInformation("✅ Added knowledge document {Id}: {Title} for tenant {TenantId}", 
                 entity.Id, entity.Title, entity.TenantId);

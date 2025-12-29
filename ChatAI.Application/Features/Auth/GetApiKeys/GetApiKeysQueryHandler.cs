@@ -20,10 +20,8 @@ public class GetApiKeysQueryHandler : IRequestHandler<GetApiKeysQuery, List<ApiK
     
     public async Task<List<ApiKey>> Handle(GetApiKeysQuery request, CancellationToken cancellationToken)
     {
+        // Tenant filtering handled by global query filter in ApiKeyRepository
         var apiKeys = await _apiKeyRepository.GetAllAsync(request.IncludeInactive, cancellationToken);
-        
-        // Filter by current tenant
-        var tenantId = _tenantContext.RequiredTenantId.ToString();
-        return apiKeys.Where(k => k.TenantId == tenantId).ToList();
+        return apiKeys;
     }
 }

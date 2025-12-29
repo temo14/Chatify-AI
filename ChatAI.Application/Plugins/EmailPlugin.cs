@@ -1,5 +1,6 @@
 using ChatAI.Application.Services;
 using ChatAI.Domain.Interfaces.Services;
+using ChatAI.Domain.Interfaces.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using System.ComponentModel;
@@ -13,18 +14,21 @@ namespace ChatAI.Application.Plugins;
 public class EmailPlugin
 {
     private readonly IEmailService _emailService;
-    private readonly IConfigurationService _configService;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantRepository _tenantRepository;
     private readonly ChatContext _chatContext;
     private readonly ILogger<EmailPlugin> _logger;
 
     public EmailPlugin(
         IEmailService emailService,
-        IConfigurationService configService,
+        ITenantContext tenantContext,
+        ITenantRepository tenantRepository,
         ChatContext chatContext,
         ILogger<EmailPlugin> logger)
     {
         _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
-        _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _chatContext = chatContext ?? throw new ArgumentNullException(nameof(chatContext));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -57,11 +61,20 @@ public class EmailPlugin
                 return "❌ Cannot send email: Message content is required.";
             }
 
-            // Get admin email from configuration (database - Branding.SupportEmail)
-            var adminEmail = await _configService.GetValueAsync("Branding.SupportEmail", string.Empty);
-            if (string.IsNullOrWhiteSpace(adminEmail))
+            // Get support email from tenant settings
+            var tenantId = _tenantContext.TenantId;
+            if (!tenantId.HasValue || tenantId.Value == Guid.Empty)
             {
-                _logger.LogWarning("Support email not configured in database (Branding.SupportEmail)");
+                _logger.LogWarning("No tenant context available");
+                return "⚠️ Support email is not configured. Please contact your administrator.";
+            }
+
+            var tenant = await _tenantRepository.GetByIdAsync(tenantId.Value);
+            var supportEmail = tenant?.Settings?.SupportEmail;
+            
+            if (string.IsNullOrWhiteSpace(supportEmail))
+            {
+                _logger.LogWarning("Support email not configured for tenant {TenantId}", tenantId);
                 return "⚠️ Support email is not configured. Please contact your administrator.";
             }
 
@@ -73,7 +86,7 @@ public class EmailPlugin
                 emailType: "support");
 
             var success = await _emailService.SendEmailAsync(
-                toEmail: adminEmail,
+                toEmail: supportEmail,
                 toName: "Administrator",
                 subject: $"[Chatify AI] {subject}",
                 message: htmlMessage,
@@ -81,13 +94,13 @@ public class EmailPlugin
 
             if (success)
             {
-                _logger.LogInformation("✅ [{Context}] TOOL SUCCESS: Email sent to admin", 
-                    _chatContext.GetContextInfo());
+                _logger.LogInformation("✅ [{Context}] TOOL SUCCESS: Email sent to {Email}", 
+                    _chatContext.GetContextInfo(), supportEmail);
                 return "✅ Your message has been sent to the administrator. They will review it and get back to you soon.";
             }
             else
             {
-                _logger.LogWarning("⚠️ [{Context}] TOOL FAILED: Failed to send email to admin", 
+                _logger.LogWarning("⚠️ [{Context}] TOOL FAILED: Failed to send email", 
                     _chatContext.GetContextInfo());
                 return "⚠️ I attempted to send your message, but there was an issue with the email service. Please try contacting support directly.";
             }
@@ -118,11 +131,20 @@ public class EmailPlugin
             return "❌ Please provide details about the feature you'd like to suggest.";
         }
 
-        var adminEmail = await _configService.GetValueAsync("Email.AdminEmail", string.Empty);
-        if (string.IsNullOrWhiteSpace(adminEmail))
+        var tenantId = _tenantContext.TenantId;
+        if (tenantId == Guid.Empty)
         {
-            _logger.LogWarning("Admin email not configured");
-            return "⚠️ Administrator email is not configured. Please try again later.";
+            _logger.LogWarning("No tenant context available");
+            return "⚠️ Support email is not configured. Please contact your administrator.";
+        }
+
+        var tenant = await _tenantRepository.GetByIdAsync(tenantId!.Value);
+        var supportEmail = tenant?.Settings?.SupportEmail;
+        
+        if (string.IsNullOrWhiteSpace(supportEmail))
+        {
+            _logger.LogWarning("Support email not configured for tenant {TenantId}", tenantId);
+            return "⚠️ Support email is not configured. Please contact your administrator.";
         }
 
         var htmlMessage = BuildHtmlEmail(
@@ -132,7 +154,7 @@ public class EmailPlugin
             emailType: "feature");
 
         var success = await _emailService.SendEmailAsync(
-            toEmail: adminEmail,
+            toEmail: supportEmail,
             toName: "Administrator",
             subject: "[Chatify AI] Feature Request",
             message: htmlMessage,
@@ -170,11 +192,20 @@ public class EmailPlugin
             return "❌ Please describe the issue you're experiencing.";
         }
 
-        var adminEmail = await _configService.GetValueAsync("Email.AdminEmail", string.Empty);
-        if (string.IsNullOrWhiteSpace(adminEmail))
+        var tenantId = _tenantContext.TenantId;
+        if (tenantId == Guid.Empty)
         {
-            _logger.LogWarning("Admin email not configured");
-            return "⚠️ Administrator email is not configured. Please try again later.";
+            _logger.LogWarning("No tenant context available");
+            return "⚠️ Support email is not configured. Please contact your administrator.";
+        }
+
+        var tenant = await _tenantRepository.GetByIdAsync(tenantId!.Value);
+        var supportEmail = tenant?.Settings?.SupportEmail;
+        
+        if (string.IsNullOrWhiteSpace(supportEmail))
+        {
+            _logger.LogWarning("Support email not configured for tenant {TenantId}", tenantId);
+            return "⚠️ Support email is not configured. Please contact your administrator.";
         }
 
         var htmlMessage = BuildHtmlEmail(
@@ -184,7 +215,7 @@ public class EmailPlugin
             emailType: "bug");
 
         var success = await _emailService.SendEmailAsync(
-            toEmail: adminEmail,
+            toEmail: supportEmail,
             toName: "Administrator",
             subject: "[Chatify AI] Bug Report",
             message: htmlMessage,

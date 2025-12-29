@@ -19,8 +19,24 @@ public static class ApplicationBuilderExtensions
         bool runMigrationsInProduction = false)
     {
         using var scope = app.ApplicationServices.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        
+        // Skip migrations entirely in test environment
+        if (environment.IsEnvironment("Testing"))
+        {
+            logger.LogInformation("Test environment detected. Skipping database migrations.");
+            return app;
+        }
+        
+        var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
+
+        // Skip migrations for InMemory database (used in tests)
+        var providerName = db.Database.ProviderName;
+        if (providerName != null && providerName.Contains("InMemory", StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogInformation("InMemory database detected. Skipping migrations.");
+            return app;
+        }
 
         // In production, only run migrations if explicitly enabled
         if (environment.IsProduction() && !runMigrationsInProduction)
@@ -43,7 +59,8 @@ public static class ApplicationBuilderExtensions
                 db, 
                 authService, 
                 configuration, 
-                scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>());
+                scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>(),
+                scope.ServiceProvider);
             await seeder.SeedAsync();
         }
 

@@ -5,6 +5,7 @@ using ChatAI.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ChatAI.Infrastructure.Data;
 
@@ -18,17 +19,20 @@ public class DbSeeder
     private readonly IAuthService _authService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<DbSeeder> _logger;
+    private readonly IServiceProvider _serviceProvider;
 
     public DbSeeder(
         ChatDbContext context, 
         IAuthService authService,
         IConfiguration configuration,
-        ILogger<DbSeeder> logger)
+        ILogger<DbSeeder> logger,
+        IServiceProvider serviceProvider)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 
     public async Task SeedAsync()
@@ -38,7 +42,13 @@ public class DbSeeder
             // 1. Seed Dott tenant with platform admin user (in one transaction)
             var dottTenant = await SeedDottTenantAsync();
 
-            // 2. Seed platform-level admin configurations
+            // 2. Seed test tenants for multi-tenant isolation testing (development only)
+            if (_configuration["ASPNETCORE_ENVIRONMENT"] == "Development")
+            {
+                await SeedTestTenantsAsync();
+            }
+
+            // 3. Seed platform-level admin configurations
             await SeedAdminConfigurationsAsync();
 
             // Check if database already has knowledge data
@@ -55,6 +65,47 @@ public class DbSeeder
             await SeedDemoKnowledgeAsync(dottTenant.Id);
 
             await _context.SaveChangesAsync();
+            
+            // 5. Generate embeddings for demo documents (async, non-blocking)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var knowledgeRepo = scope.ServiceProvider.GetRequiredService<IKnowledgeRepository>();
+                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+                    
+                    // Set tenant context for Dott tenant
+                    tenantContext.SetTenant(dottTenant.Id, dottTenant.Slug);
+                    
+                    var docs = await knowledgeRepo.GetAllAsync();
+                    var docsWithoutEmbeddings = docs.Where(d => string.IsNullOrEmpty(d.EmbeddingReference)).ToList();
+                    
+                    if (docsWithoutEmbeddings.Any())
+                    {
+                        _logger.LogInformation("Generating embeddings for {Count} demo documents (background task)...", docsWithoutEmbeddings.Count);
+                        
+                        foreach (var doc in docsWithoutEmbeddings)
+                        {
+                            try
+                            {
+                                await knowledgeRepo.UpdateAsync(doc);
+                                _logger.LogDebug("✓ Generated embedding for: {Title}", doc.Title);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to generate embedding for document {Id}", doc.Id);
+                            }
+                        }
+                        
+                        _logger.LogInformation("✓ Embedding generation completed");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error generating embeddings for demo documents");
+                }
+            });
 
             _logger.LogInformation("✓ Database seeding completed successfully");
         }
@@ -465,4 +516,136 @@ public class DbSeeder
 
         _logger.LogInformation("✓ Seeded {Count} platform admin configurations", adminConfigs.Count);
     }
+
+    /// <summary>
+    /// Seeds test tenants for multi-tenant isolation testing (Development only)
+    /// Creates Tenant A and Tenant B with admin users for testing cross-tenant isolation
+    /// </summary>
+    private async Task SeedTestTenantsAsync()
+    {
+        // Create Tenant A
+        var tenantA = await _context.Tenants.FirstOrDefaultAsync(t => t.Slug == "tenanta");
+        if (tenantA == null)
+        {
+            var tenantAId = Guid.NewGuid();
+            tenantA = new Tenant
+            {
+                Id = tenantAId,
+                Slug = "tenanta",
+                Name = "Test Tenant A",
+                Email = "admin@tenanta.com",
+                PlanTier = "Basic",
+                IsActive = true,
+                MaxDocuments = 100,
+                MaxMonthlyMessages = 10000,
+                CurrentDocumentCount = 0,
+                CurrentMonthMessages = 0,
+                BillingPeriodStart = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var adminA = new AdminUser
+            {
+                Id = Guid.NewGuid(),
+                Username = "adminA",
+                PasswordHash = _authService.HashPassword("Password123!"),
+                Email = "admin@tenanta.com",
+                FullName = "Admin User A",
+                TenantId = tenantAId,
+                IsPlatformAdmin = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var settingsA = new TenantSettings
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantAId,
+                VectorStorageMode = "SQL",
+                EnableDocumentChunking = true,
+                EnableChatHistory = true,
+                ChatHistoryRetentionDays = 90,
+                EnableFeedback = true,
+                EnableOverview = true,
+                WelcomeMessage = "Welcome to Tenant A! How can I help you?",
+                Temperature = 0.7f,
+                MaxTokens = 2000,
+                EnableTools = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Tenants.Add(tenantA);
+            _context.AdminUsers.Add(adminA);
+            _context.TenantSettings.Add(settingsA);
+            _logger.LogInformation("✓ Created Tenant A (tenanta) with admin user adminA");
+        }
+        else
+        {
+            _logger.LogInformation("Test Tenant A already exists");
+        }
+
+        // Create Tenant B
+        var tenantB = await _context.Tenants.FirstOrDefaultAsync(t => t.Slug == "tenantb");
+        if (tenantB == null)
+        {
+            var tenantBId = Guid.NewGuid();
+            tenantB = new Tenant
+            {
+                Id = tenantBId,
+                Slug = "tenantb",
+                Name = "Test Tenant B",
+                Email = "admin@tenantb.com",
+                PlanTier = "Pro",
+                IsActive = true,
+                MaxDocuments = 500,
+                MaxMonthlyMessages = 50000,
+                CurrentDocumentCount = 0,
+                CurrentMonthMessages = 0,
+                BillingPeriodStart = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var adminB = new AdminUser
+            {
+                Id = Guid.NewGuid(),
+                Username = "adminB",
+                PasswordHash = _authService.HashPassword("Password123!"),
+                Email = "admin@tenantb.com",
+                FullName = "Admin User B",
+                TenantId = tenantBId,
+                IsPlatformAdmin = false,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var settingsB = new TenantSettings
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantBId,
+                VectorStorageMode = "SQL",
+                EnableDocumentChunking = true,
+                EnableChatHistory = true,
+                ChatHistoryRetentionDays = 180,
+                EnableFeedback = true,
+                EnableOverview = true,
+                WelcomeMessage = "Welcome to Tenant B! How can I assist you today?",
+                Temperature = 0.8f,
+                MaxTokens = 3000,
+                EnableTools = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Tenants.Add(tenantB);
+            _context.AdminUsers.Add(adminB);
+            _context.TenantSettings.Add(settingsB);
+            _logger.LogInformation("✓ Created Tenant B (tenantb) with admin user adminB");
+        }
+        else
+        {
+            _logger.LogInformation("Test Tenant B already exists");
+        }
+
+        await _context.SaveChangesAsync();
+    }
 }
+

@@ -27,30 +27,33 @@ public class ChatStreamService : IChatStreamService
     private readonly IChatSessionRepository _sessionRepository;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly ICacheService _cacheService;
+    private readonly ITenantContext _tenantContext;
+    private readonly ITenantRepository _tenantRepository;
     private readonly ILogger<ChatStreamService> _logger;
     private readonly ChatOptions _options;
     private readonly CacheOptions _cacheOptions;
-    private readonly IConfigurationService _configService;
 
     public ChatStreamService(
         Kernel kernel,
         IChatSessionRepository sessionRepository,
         IKnowledgeRepository knowledgeRepository,
         ICacheService cacheService,
+        ITenantContext tenantContext,
+        ITenantRepository tenantRepository,
         ILogger<ChatStreamService> logger,
         IOptions<ChatOptions> options,
-        IOptions<CacheOptions> cacheOptions,
-        IConfigurationService configService)
+        IOptions<CacheOptions> cacheOptions)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _chatCompletion = kernel.GetRequiredService<IChatCompletionService>();
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
         _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+        _tenantContext = tenantContext ?? throw new ArgumentNullException(nameof(tenantContext));
+        _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
-        _configService = configService ?? throw new ArgumentNullException(nameof(configService));
     }
 
     public async IAsyncEnumerable<StreamChunk> HandleStreamAsync(
@@ -101,21 +104,23 @@ public class ChatStreamService : IChatStreamService
         // 3. Build conversation history
         var chatHistory = await BuildConversationHistoryAsync(request, session.Id, relevantKnowledge);
 
-        // 4. Load AI settings from database configuration (cached)
-        var cacheKey = CacheKeyBuilder.AISettings();
-        var aiSettings = await _cacheService.GetOrCreateAsync(
-            cacheKey,
-            async () => await _configService.GetAISettingsAsync(cancellationToken).ConfigureAwait(false),
-            TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+        // 4. Load AI settings from tenant settings
+        var tenant = await _tenantRepository.GetByIdAsync(_tenantContext.RequiredTenantId, cancellationToken);
+        var tenantSettings = tenant?.Settings;
+        
+        if (tenantSettings == null)
+        {
+            throw new InvalidOperationException("Tenant settings not found");
+        }
 
-        // 5. Stream AI response using Semantic Kernel with dynamic configuration
+        // 5. Stream AI response using Semantic Kernel with tenant configuration
         var settings = new AzureOpenAIPromptExecutionSettings
         {
-            Temperature = aiSettings.Temperature,
-            MaxTokens = aiSettings.MaxTokens,
-            TopP = aiSettings.TopP,
-            FrequencyPenalty = aiSettings.FrequencyPenalty,
-            PresencePenalty = aiSettings.PresencePenalty
+            Temperature = tenantSettings.Temperature,
+            MaxTokens = tenantSettings.MaxTokens,
+            TopP = 0.95,
+            FrequencyPenalty = 0.3,
+            PresencePenalty = 0.2
         };
 
         _logger.LogDebug("Streaming with AI settings: Temp={Temp}, MaxTokens={MaxTokens}", 
@@ -218,19 +223,21 @@ public class ChatStreamService : IChatStreamService
     {
         var chatHistory = new Microsoft.SemanticKernel.ChatCompletion.ChatHistory();
 
-        // Load AI settings to get system prompt from database (cached)
-        var cacheKey = CacheKeyBuilder.AISettings();
-        var aiSettings = await _cacheService.GetOrCreateAsync(
-            cacheKey,
-            async () => await _configService.GetAISettingsAsync().ConfigureAwait(false),
-            TimeSpan.FromMinutes(10)).ConfigureAwait(false);
+        // Load tenant settings for system prompt
+        var tenant = await _tenantRepository.GetByIdAsync(_tenantContext.RequiredTenantId);
+        var settings = tenant?.Settings;
+        
+        if (settings == null)
+        {
+            throw new InvalidOperationException("Tenant settings not found");
+        }
         
         // System prompt with RAG
-        var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs, aiSettings.SystemPrompt);
+        var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs, settings.SystemPrompt ?? "You are a helpful AI assistant.");
         chatHistory.AddSystemMessage(systemPrompt);
 
         // Load previous messages with pagination (only load what we need)
-        var historyCacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
+        var historyCacheKey = CacheKeyBuilder.ConversationHistory(sessionId, _tenantContext.RequiredTenantId);
         var recentMessages = await _cacheService.GetOrCreateAsync(
             historyCacheKey,
             async () => await _sessionRepository.GetSessionMessagesAsync(
@@ -304,7 +311,7 @@ public class ChatStreamService : IChatStreamService
             await _sessionRepository.AddMessagesAsync(messages).ConfigureAwait(false);
             
             // Invalidate cache
-            var cacheKey = CacheKeyBuilder.ConversationHistory(sessionId);
+            var cacheKey = CacheKeyBuilder.ConversationHistory(sessionId, _tenantContext.RequiredTenantId);
             _cacheService.Remove(cacheKey);
             
             _logger.LogInformation("Saved streamed conversation to session {SessionId}", sessionId);

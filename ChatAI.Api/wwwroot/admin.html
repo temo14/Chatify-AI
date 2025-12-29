@@ -1097,50 +1097,65 @@
         // Fetch tenant settings for conditional UI
         async function loadTenantSettings() {
             try {
+                console.log('[SETTINGS] Fetching tenant settings from:', `${API_BASE}/tenant/settings`);
                 const res = await fetch(`${API_BASE}/tenant/settings`, {
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
+                    credentials: 'include'
                 });
+                console.log('[SETTINGS] Response status:', res.status);
+                
                 if (res.ok) {
-                    const tenant = await res.json();
-                    tenantSettings = tenant.settings;
+                    const data = await res.json();
+                    console.log('[SETTINGS] Response data:', data);
+                    console.log('[SETTINGS] Settings object:', data.settings || data.Settings);
+                    tenantSettings = data.settings || data.Settings;
+                    
+                    if (tenantSettings) {
+                        console.log('[SETTINGS] EnableOverview:', tenantSettings.EnableOverview || tenantSettings.enableOverview);
+                        console.log('[SETTINGS] EnableFeedback:', tenantSettings.EnableFeedback || tenantSettings.enableFeedback);
+                    }
+                    
                     applyTenantSettings();
                     return tenantSettings;
+                } else {
+                    const errorText = await res.text();
+                    console.error('[SETTINGS] Failed to load settings. Status:', res.status, 'Error:', errorText);
                 }
             } catch (error) {
-                console.error('Failed to load tenant settings:', error);
+                console.error('[SETTINGS] Exception loading tenant settings:', error);
             }
             return null;
         }
 
-        // Apply tenant settings to UI (show/hide features)
         function applyTenantSettings() {
-            if (!tenantSettings) return;
+            console.log('[APPLY] Starting applyTenantSettings, settings:', tenantSettings);
+            if (!tenantSettings) {
+                console.log('[APPLY] No settings, exiting');
+                return;
+            }
 
-            // Hide/show tabs based on feature flags
             const overviewTab = document.querySelector('[data-tab="overview"]');
             const feedbackTab = document.querySelector('[data-tab="feedback"]');
             
+            console.log('[APPLY] Overview tab element:', overviewTab);
+            console.log('[APPLY] Feedback tab element:', feedbackTab);
+            
             if (overviewTab) {
-                overviewTab.style.display = tenantSettings.enableOverview ? '' : 'none';
+                const shouldShow = (tenantSettings.EnableOverview || tenantSettings.enableOverview);
+                console.log('[APPLY] Setting overview visibility to:', shouldShow);
+                overviewTab.style.display = shouldShow ? '' : 'none';
             }
             if (feedbackTab) {
-                feedbackTab.style.display = tenantSettings.enableFeedback ? '' : 'none';
+                const shouldShow = (tenantSettings.EnableFeedback || tenantSettings.enableFeedback);
+                console.log('[APPLY] Setting feedback visibility to:', shouldShow);
+                feedbackTab.style.display = shouldShow ? '' : 'none';
             }
-
-            // Hide/show Qdrant sync section based on vector storage mode
-            const qdrantSyncSection = document.querySelector('#qdrantSyncSection');
-            if (qdrantSyncSection) {
-                const isQdrantMode = tenantSettings.vectorStorageMode?.toUpperCase() === 'QDRANT';
-                qdrantSyncSection.style.display = isQdrantMode ? '' : 'none';
-            }
-
-            // Hide/show support email section based on email support feature flag
+            
+            // Show/hide support email section based on email support feature flag
             const supportEmailSection = document.querySelector('#supportEmailSection');
             if (supportEmailSection) {
-                supportEmailSection.style.display = tenantSettings.enableEmailSupport ? '' : 'none';
+                const shouldShow = tenantSettings.EnableEmailSupport || tenantSettings.enableEmailSupport;
+                supportEmailSection.style.display = shouldShow ? '' : 'none';
+                console.log('[APPLY] Support email section visibility:', shouldShow);
             }
         }
 
@@ -1176,7 +1191,6 @@
                 }
                 
                 if (chatSettingsTab) {
-                    // Both roles can see chat settings, but tenant admins see it prominently
                     chatSettingsTab.style.display = 'flex';
                 }
                 
@@ -2537,16 +2551,11 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', async () => {
-            // Check authentication first
-            debugger;
             const isAuthenticated = await checkAuth();
             if (!isAuthenticated) return;
             
-            // Load tenant settings for conditional UI
             await loadTenantSettings();
-            
             initializeDarkMode();
-            // Only load the active tab (overview) initially
             loadOverview();
         });
     </script>

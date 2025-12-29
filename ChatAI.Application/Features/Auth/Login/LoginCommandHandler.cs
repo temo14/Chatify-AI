@@ -28,29 +28,23 @@ public class LoginCommandHandler : IRequestHandler<LoginCommand, LoginResult>
     
     public async Task<LoginResult> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Login attempt for user: {Username} at tenant: {Slug}", request.Username, request.Slug);
+        _logger.LogInformation("Login attempt for user: {Username}", request.Username);
         
-        // STEP 1: Resolve tenant from slug first
-        var tenant = await _tenantRepository.GetBySlugAsync(request.Slug, cancellationToken);
-        if (tenant == null)
-        {
-            _logger.LogWarning("Login failed: Tenant not found - {Slug}", request.Slug);
-            throw new UnauthorizedException("Invalid credentials");
-        }
-        
-        if (!tenant.IsActive)
-        {
-            _logger.LogWarning("Login failed: Tenant inactive - {Slug}", request.Slug);
-            throw new UnauthorizedException("Your organization's account is currently inactive. Please contact support.");
-        }
-        
-        // STEP 2: Get user by username AND tenant ID (prevent cross-tenant username collisions)
-        var user = await _userRepository.GetByUsernameAndTenantAsync(request.Username, tenant.Id, cancellationToken);
+        // STEP 1: Get user by username (usernames are globally unique)
+        var user = await _userRepository.GetByUsernameAsync(request.Username, cancellationToken);
         
         if (user == null)
         {
-            _logger.LogWarning("Login failed: User not found - {Username} for tenant {Slug}", request.Username, request.Slug);
+            _logger.LogWarning("Login failed: User not found - {Username}", request.Username);
             throw new UnauthorizedException("Invalid credentials");
+        }
+        
+        // STEP 2: Get tenant from user and verify it's active
+        var tenant = await _tenantRepository.GetByIdAsync(user.TenantId, cancellationToken);
+        if (tenant == null || !tenant.IsActive)
+        {
+            _logger.LogWarning("Login failed: Tenant inactive or not found for user {Username}", request.Username);
+            throw new UnauthorizedException("Your organization's account is currently inactive. Please contact support.");
         }
         
         // Check if account is locked

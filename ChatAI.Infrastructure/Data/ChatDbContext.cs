@@ -317,6 +317,8 @@ public class ChatDbContext : DbContext
             modelBuilder.Entity<ChatMessage>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
             modelBuilder.Entity<MessageFeedback>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
             modelBuilder.Entity<AdminUser>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
+            // ApiKey.TenantId is string, so convert for comparison
+            modelBuilder.Entity<ApiKey>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId.ToString());
         }
     }
 }

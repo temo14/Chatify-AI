@@ -23,7 +23,10 @@ public class AdminUser
     public string PasswordHash { get; set; } = string.Empty;
     
     /// <summary>
-    /// Email address for notifications
+    /// Personal email address for this specific admin user
+    /// Used for: Password reset, security alerts, admin notifications
+    /// Each admin can have their own email address
+    /// Example: john@musicstudio.com
     /// </summary>
     public string? Email { get; set; }
     

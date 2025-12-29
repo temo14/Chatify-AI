@@ -7,8 +7,23 @@ using Microsoft.Extensions.Logging;
 namespace ChatAI.Infrastructure.Services;
 
 /// <summary>
-/// Service for reading and applying runtime configuration from database
+/// Service for reading and applying PLATFORM-WIDE runtime configuration from database
 /// Allows real-time configuration changes without redeployment
+/// 
+/// IMPORTANT: This service uses a GLOBAL CACHE without tenant isolation
+/// DO NOT USE for tenant-specific settings like Temperature, MaxTokens, SupportEmail, etc.
+/// 
+/// CORRECT USAGE: Platform-wide settings that apply to all tenants
+/// - Global rate limits
+/// - Feature flags for entire platform
+/// - External API keys (not tenant-specific)
+/// - System-wide defaults
+/// 
+/// INCORRECT USAGE: Tenant-specific settings
+/// - Use TenantSettings entity instead
+/// - Access via ITenantRepository.GetByIdAsync(tenantId)
+/// 
+/// Caching: 5-minute cache is appropriate for platform settings that rarely change
 /// </summary>
 public class ConfigurationService : IConfigurationService
 {
@@ -125,6 +140,8 @@ public class ConfigurationService : IConfigurationService
 
     /// <summary>
     /// Get all AI settings for chat execution
+    /// NOTE: This returns GLOBAL defaults. For tenant-specific AI settings,
+    /// use tenant.Settings.Temperature, tenant.Settings.MaxTokens, etc.
     /// </summary>
     public async Task<AIChatSettings> GetAISettingsAsync(CancellationToken ct = default)
     {

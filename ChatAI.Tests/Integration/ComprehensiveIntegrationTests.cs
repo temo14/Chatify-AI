@@ -10,6 +10,7 @@ using ChatAI.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ChatAI.Tests.Integration;
@@ -37,24 +38,47 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
     private string _apiKeyB = "";
     private Guid _docAId;
     private Guid _docBId;
-    private string _sessionAId;
-    private string _sessionBId;
+    private string? _sessionAId;
+    private string? _sessionBId;
 
     public ComprehensiveIntegrationTests(WebApplicationFactory<Program> factory)
     {
+        // Set environment variable BEFORE building host
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
+        
         _factory = factory.WithWebHostBuilder(builder =>
         {
+            builder.ConfigureAppConfiguration((context, config) =>
+            {
+                // Add test configuration
+                var testConfig = new Dictionary<string, string?>
+                {
+                    ["Jwt:SecretKey"] = "ThisIsATestSecretKeyForJwtTokenGeneration123456",
+                    ["Jwt:Issuer"] = "ChatAI.Test",
+                    ["Jwt:Audience"] = "ChatAI.Test.Client",
+                    ["Jwt:ExpirationMinutes"] = "60",
+                    ["AzureOpenAI:Endpoint"] = "https://test.openai.azure.com",
+                    ["AzureOpenAI:ApiKey"] = "test-key",
+                    ["AzureOpenAI:ChatDeploymentName"] = "gpt-4",
+                    ["AzureOpenAI:EmbeddingDeploymentName"] = "text-embedding-ada-002",
+                    ["ConnectionStrings:DefaultConnection"] = "Server=localhost;Database=TestDb;",
+                    ["Email:SmtpServer"] = "localhost",
+                    ["Email:SmtpPort"] = "25",
+                    ["Email:FromEmail"] = "test@test.com",
+                    ["Email:FromName"] = "Test",
+                    ["Cache:Provider"] = "Memory"
+                };
+                config.AddInMemoryCollection(testConfig);
+            });
+            
             builder.ConfigureServices(services =>
             {
-                // Replace production database with in-memory database for testing
-                var descriptor = services.SingleOrDefault(
+                // Remove the existing DbContext configuration
+                var dbContextDescriptor = services.SingleOrDefault(
                     d => d.ServiceType == typeof(DbContextOptions<ChatDbContext>));
-                
-                if (descriptor != null)
-                {
-                    services.Remove(descriptor);
-                }
+                if (dbContextDescriptor != null) services.Remove(dbContextDescriptor);
 
+                // Replace with InMemory database for testing
                 services.AddDbContext<ChatDbContext>(options =>
                 {
                     options.UseInMemoryDatabase("TestDb");
@@ -245,8 +269,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
         var loginDto = new LoginDto
         {
             Username = "adminA",
-            Password = "Password123!",
-            Slug = _tenantASlug
+            Password = "Password123!"
         };
 
         // Act
@@ -265,12 +288,11 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
     [Fact]
     public async Task Login_WithWrongTenant_ShouldFail()
     {
-        // Arrange - Try to login as adminA but with tenantB's slug
+        // Arrange - Try to login with wrong password
         var loginDto = new LoginDto
         {
             Username = "adminA",
-            Password = "Password123!",
-            Slug = _tenantBSlug // Wrong tenant!
+            Password = "WrongPassword!"
         };
 
         // Act
@@ -645,8 +667,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
         var loginDto = new LoginDto
         {
             Username = "adminA",
-            Password = "Password123!",
-            Slug = _tenantASlug
+            Password = "Password123!"
         };
 
         var response = await _client.PostAsJsonAsync("/api/auth/login", loginDto);
@@ -661,8 +682,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
         var loginDto = new LoginDto
         {
             Username = "adminB",
-            Password = "Password123!",
-            Slug = _tenantBSlug
+            Password = "Password123!"
         };
 
         var response = await _client.PostAsJsonAsync("/api/auth/login", loginDto);

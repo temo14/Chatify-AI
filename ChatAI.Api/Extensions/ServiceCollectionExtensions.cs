@@ -27,6 +27,12 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
+        // Skip SQL Server registration in test environment - tests will register InMemory
+        if (environment.IsEnvironment("Testing"))
+        {
+            return services;
+        }
+        
         services.AddDbContext<ChatDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("DefaultConnection");

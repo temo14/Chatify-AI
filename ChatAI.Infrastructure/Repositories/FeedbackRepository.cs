@@ -30,9 +30,18 @@ public class FeedbackRepository : IFeedbackRepository
 
     public async Task<MessageFeedback?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        return await _context.MessageFeedbacks
+        var feedback = await _context.MessageFeedbacks
             .AsNoTracking()
             .FirstOrDefaultAsync(f => f.Id == id, ct);
+            
+        // Explicit tenant validation for additional security
+        if (feedback != null && feedback.TenantId != _tenantContext.TenantId)
+        {
+            _logger.LogWarning("⚠️ Attempted cross-tenant feedback access: {FeedbackId}", id);
+            return null;
+        }
+        
+        return feedback;
     }
 
     public async Task<MessageFeedback?> GetByMessageIdAndUserIdAsync(Guid messageId, string? userId, CancellationToken ct = default)
@@ -44,6 +53,13 @@ public class FeedbackRepository : IFeedbackRepository
 
     public async Task<IEnumerable<MessageFeedback>> GetAllAsync(CancellationToken ct = default)
     {
+        // Ensure tenant context is set
+        if (_tenantContext.TenantId == null)
+        {
+            _logger.LogWarning("⚠️ GetAllAsync called without tenant context");
+            return Enumerable.Empty<MessageFeedback>();
+        }
+        
         return await _context.MessageFeedbacks
             .AsNoTracking()
             .OrderByDescending(f => f.CreatedAt)

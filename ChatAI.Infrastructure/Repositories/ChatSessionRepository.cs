@@ -29,13 +29,29 @@ public class ChatSessionRepository : IChatSessionRepository
 
     public async Task<ChatSession?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await _context.ChatSessions
+        var session = await _context.ChatSessions
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id, ct);
+            
+        // Explicit tenant validation for additional security
+        if (session != null && session.TenantId != _tenantContext.TenantId)
+        {
+            _logger.LogWarning("⚠️ Attempted cross-tenant session access: {SessionId}", id);
+            return null;
+        }
+        
+        return session;
     }
 
     public async Task<IEnumerable<ChatSession>> GetAllAsync(CancellationToken ct = default)
     {
+        // Ensure tenant context is set
+        if (_tenantContext.TenantId == null)
+        {
+            _logger.LogWarning("⚠️ GetAllAsync called without tenant context");
+            return Enumerable.Empty<ChatSession>();
+        }
+        
         return await _context.ChatSessions
             .AsNoTracking()
             .OrderByDescending(s => s.UpdatedAt)

@@ -21,11 +21,12 @@ public class ChatStreamServiceTests
     private readonly Mock<IChatSessionRepository> _mockSessionRepository;
     private readonly Mock<IKnowledgeRepository> _mockKnowledgeRepository;
     private readonly Mock<ICacheService> _mockCacheService;
+    private readonly Mock<ITenantContext> _mockTenantContext;
+    private readonly Mock<ITenantRepository> _mockTenantRepository;
     private readonly Mock<ILogger<ChatStreamService>> _mockLogger;
     private readonly Mock<IOptions<ChatOptions>> _mockChatOptions;
     private readonly Mock<IOptions<CacheOptions>> _mockCacheOptions;
     private readonly Mock<IChatCompletionService> _mockChatCompletion;
-    private readonly Mock<IConfigurationService> _mockConfigService;
     
     private readonly ChatStreamService _sut;
 
@@ -40,6 +41,8 @@ public class ChatStreamServiceTests
         _mockSessionRepository = new Mock<IChatSessionRepository>();
         _mockKnowledgeRepository = new Mock<IKnowledgeRepository>();
         _mockCacheService = new Mock<ICacheService>();
+        _mockTenantContext = new Mock<ITenantContext>();
+        _mockTenantRepository = new Mock<ITenantRepository>();
         _mockLogger = new Mock<ILogger<ChatStreamService>>();
 
         var chatOptions = new ChatOptions
@@ -57,29 +60,33 @@ public class ChatStreamServiceTests
         _mockCacheOptions = new Mock<IOptions<CacheOptions>>();
         _mockCacheOptions.Setup(x => x.Value).Returns(cacheOptions);
 
-        // Mock configuration service
-        _mockConfigService = new Mock<IConfigurationService>();
-        _mockConfigService.Setup(c => c.GetAISettingsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AIChatSettings
+        // Mock tenant context and repository
+        var tenantId = Guid.NewGuid();
+        _mockTenantContext.Setup(x => x.RequiredTenantId).Returns(tenantId);
+        
+        var tenant = new Tenant
+        {
+            Id = tenantId,
+            Settings = new TenantSettings
             {
                 SystemPrompt = "Test AI assistant",
                 Temperature = 0.7,
-                MaxTokens = 1500,
-                TopP = 0.95,
-                FrequencyPenalty = 0.3,
-                PresencePenalty = 0.2,
-                ModelName = "gpt-4o"
-            });
+                MaxTokens = 1500
+            }
+        };
+        _mockTenantRepository.Setup(x => x.GetByIdAsync(tenantId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(tenant);
 
         _sut = new ChatStreamService(
             _kernel,
             _mockSessionRepository.Object,
             _mockKnowledgeRepository.Object,
             _mockCacheService.Object,
+            _mockTenantContext.Object,
+            _mockTenantRepository.Object,
             _mockLogger.Object,
             _mockChatOptions.Object,
-            _mockCacheOptions.Object,
-            _mockConfigService.Object
+            _mockCacheOptions.Object
         );
     }
 
