@@ -2,14 +2,17 @@ using AspNetCoreRateLimit;
 using ChatAI.Api.Extensions;
 using Serilog;
 
-// Configure Serilog before building the application
-LoggingExtensions.ConfigureSerilog();
-
 try
 {
-    Log.Information("Starting ChatAI application");
-
     var builder = WebApplication.CreateBuilder(args);
+
+    // Configure Azure Key Vault for Production (loads secrets before services are configured)
+    // Note: If Key Vault is configured but inaccessible, the app will fail to start (fail-fast principle)
+    // This ensures we don't run with potentially missing critical secrets
+    builder.AddAzureKeyVaultConfiguration();
+
+    // Reconfigure Serilog with Seq support now that configuration is loaded
+    builder.ConfigureSerilogWithSeq();
 
     // Replace default logging with Serilog
     builder.Host.UseSerilog();

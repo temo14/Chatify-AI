@@ -1,5 +1,7 @@
+﻿using Azure.Identity;
 using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Infrastructure.Data;
+using ChatAI.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatAI.Api.Extensions;
@@ -12,11 +14,9 @@ public static class ApplicationBuilderExtensions
     /// <summary>
     /// Run database migrations and seed data
     /// </summary>
-    /// <param name="runMigrationsInProduction">Set to true to run migrations in production (use with caution)</param>
     public static async Task<IApplicationBuilder> UseDatabaseMigrationsAsync(
         this IApplicationBuilder app,
-        IWebHostEnvironment environment,
-        bool runMigrationsInProduction = false)
+        IWebHostEnvironment environment)
     {
         using var scope = app.ApplicationServices.CreateScope();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
@@ -38,31 +38,22 @@ public static class ApplicationBuilderExtensions
             return app;
         }
 
-        // In production, only run migrations if explicitly enabled
-        if (environment.IsProduction() && !runMigrationsInProduction)
-        {
-            logger.LogInformation("Production environment detected. Skipping automatic migrations. Run migrations manually using: dotnet ef database update");
-            return app;
-        }
-
         // Run SQL Server migrations
         logger.LogInformation("Running database migrations...");
         await db.Database.MigrateAsync();
 
-        // Seed data (only in development or first run)
-        if (environment.IsDevelopment())
-        {
-            logger.LogInformation("Seeding database...");
-            var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
-            var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-            var seeder = new DbSeeder(
-                db, 
-                authService, 
-                configuration, 
-                scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>(),
-                scope.ServiceProvider);
-            await seeder.SeedAsync();
-        }
+        // Seed data - runs in all environments on first startup
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var authService = scope.ServiceProvider.GetRequiredService<IAuthService>();
+        
+        logger.LogInformation("Checking if database seeding is required...");
+        var seeder = new DbSeeder(
+            db, 
+            authService, 
+            configuration, 
+            scope.ServiceProvider.GetRequiredService<ILogger<DbSeeder>>(),
+            scope.ServiceProvider);
+        await seeder.SeedAsync();
 
         return app;
     }

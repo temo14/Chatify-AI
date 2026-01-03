@@ -165,9 +165,9 @@ public class DbSeeder
         }
 
         // Get credentials from configuration or use defaults
-        var username = _configuration["ADMIN__USERNAME"] ?? "admin";
-        var password = _configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
-        var email = _configuration["ADMIN__EMAIL"] ?? "admin@dott.ai";
+        var username = _configuration["Admin:Username"] ?? "admin";
+        var password = _configuration["Admin:Password"] ?? "Admin@123456";
+        var email = _configuration["Admin:Email"] ?? "admin@chatify.ge";
 
         // Create IDs upfront to avoid circular dependency
         var tenantId = Guid.NewGuid();
@@ -218,6 +218,7 @@ public class DbSeeder
             ChatHistoryRetentionDays = 365,
             EnableFeedback = true,
             EnableOverview = true,
+            EnableEmailSupport = true,
             WelcomeMessage = "Welcome to ChatifyAI! How can I help you today?",
             Temperature = 0.7f,
             MaxTokens = 2000,
@@ -253,9 +254,9 @@ public class DbSeeder
         }
 
         // Get credentials from configuration or use defaults
-        var username = _configuration["ADMIN__USERNAME"] ?? "admin";
-        var password = _configuration["ADMIN__PASSWORD"] ?? "Admin@123456";
-        var email = _configuration["ADMIN__EMAIL"] ?? "admin@dott.ai";
+        var username = _configuration["Admin:Username"] ?? "admin";
+        var password = _configuration["Admin:Password"] ?? "Admin@123456";
+        var email = _configuration["Admin:Email"] ?? "admin@chatify.ge";
 
         var platformAdmin = new AdminUser
         {

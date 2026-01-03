@@ -10,7 +10,6 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.SemanticKernel;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
@@ -72,6 +71,18 @@ public static class ServiceCollectionExtensions
         services.Configure<JwtOptions>(
             configuration.GetSection(JwtOptions.SectionName));
 
+        // Register AzureOpenAISDK for health checks and other services
+        services.AddSingleton(sp =>
+        {
+            var config = configuration.GetSection(AzureOpenAIOptions.SectionName)
+                .Get<AzureOpenAIOptions>() 
+                ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
+
+            return new AzureOpenAISDK(
+                new Uri(config.Endpoint),
+                new AzureKeyCredential(config.ApiKey));
+        });
+
         // Register ChatClient for chat completions
         services.AddSingleton(sp =>
         {
@@ -79,10 +90,7 @@ public static class ServiceCollectionExtensions
                 .Get<AzureOpenAIOptions>() 
                 ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
 
-            var azureClient = new AzureOpenAISDK(
-                new Uri(config.Endpoint),
-                new AzureKeyCredential(config.ApiKey));
-
+            var azureClient = sp.GetRequiredService<AzureOpenAISDK>();
             return azureClient.GetChatClient(config.ChatDeploymentName);
         });
 
@@ -93,10 +101,7 @@ public static class ServiceCollectionExtensions
                 .Get<AzureOpenAIOptions>() 
                 ?? throw new InvalidOperationException("AzureOpenAI configuration is missing");
 
-            var azureClient = new AzureOpenAISDK(
-                new Uri(config.Endpoint),
-                new AzureKeyCredential(config.ApiKey));
-
+            var azureClient = sp.GetRequiredService<AzureOpenAISDK>();
             return azureClient.GetEmbeddingClient(config.EmbeddingDeploymentName);
         });
 

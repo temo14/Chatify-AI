@@ -33,12 +33,16 @@ public class ValidateApiKeyQueryHandler : IRequestHandler<ValidateApiKeyQuery, A
         // Hash the provided API key
         var keyHash = _apiKeyService.HashApiKey(request.ApiKey);
         
+        _logger.LogInformation("Validating API key - Prefix: {Prefix}, Hash: {Hash}", 
+            request.ApiKey.Substring(0, Math.Min(15, request.ApiKey.Length)), 
+            keyHash);
+        
         // Find the key in database
         var apiKey = await _apiKeyRepository.GetByKeyHashAsync(keyHash, cancellationToken);
         
         if (apiKey == null)
         {
-            _logger.LogWarning("API key validation failed: Key not found");
+            _logger.LogWarning("API key validation failed: Key not found. Hash: {Hash}", keyHash);
             return null;
         }
         

@@ -41,6 +41,10 @@ public class ApiKeyAuthenticationHandler : AuthenticationHandler<AuthenticationS
             return AuthenticateResult.NoResult();
         }
         
+        Logger.LogInformation("Attempting to validate API key: Prefix={Prefix}, Length={Length}", 
+            apiKey.Length >= 15 ? apiKey.Substring(0, 15) : apiKey, 
+            apiKey.Length);
+        
         try
         {
             // Validate API key using MediatR

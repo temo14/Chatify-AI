@@ -234,6 +234,9 @@ namespace ChatAI.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            // Note: Initial admin user and tenant seeding is now handled by DbSeeder
+            // This ensures proper password hashing and configuration-based setup
+
             migrationBuilder.CreateIndex(
                 name: "IX_AdminConfigurations_Category",
                 table: "AdminConfigurations",

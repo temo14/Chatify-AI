@@ -8,9 +8,10 @@ COPY ["ChatAI.Api/ChatAI.Api.csproj", "ChatAI.Api/"]
 COPY ["ChatAI.Application/ChatAI.Application.csproj", "ChatAI.Application/"]
 COPY ["ChatAI.Domain/ChatAI.Domain.csproj", "ChatAI.Domain/"]
 COPY ["ChatAI.Infrastructure/ChatAI.Infrastructure.csproj", "ChatAI.Infrastructure/"]
+COPY ["ChatAI.Tests/ChatAI.Tests.csproj", "ChatAI.Tests/"]
 
 # Restore dependencies (cached if csproj files unchanged)
-RUN dotnet restore "Chatify AI.sln"
+RUN dotnet restore -r linux-x64
 
 # Copy all source code
 COPY . .
@@ -24,11 +25,9 @@ FROM build AS publish
 RUN dotnet publish "ChatAI.Api.csproj" \
     -c Release \
     -o /app/publish \
+    -r linux-x64 \
     --no-restore \
-    --no-build \
-    /p:UseAppHost=false \
-    /p:PublishTrimmed=false \
-    /p:PublishReadyToRun=true
+    /p:UseAppHost=false
 
 # Final stage - runtime image (minimal)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview AS final

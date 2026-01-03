@@ -32,6 +32,10 @@ public class CreateApiKeyCommandHandler : IRequestHandler<CreateApiKeyCommand, A
         // Generate API key
         var (plainKey, keyHash) = _apiKeyService.GenerateApiKey();
         
+        _logger.LogInformation("Generated API key - Prefix: {Prefix}, Hash: {Hash}", 
+            plainKey.Substring(0, Math.Min(15, plainKey.Length)), 
+            keyHash);
+        
         // Create API key entity
         var apiKey = new ApiKey
         {
