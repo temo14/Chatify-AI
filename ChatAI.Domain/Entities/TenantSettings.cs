@@ -38,12 +38,8 @@ public class TenantSettings
     public int ChunkOverlap { get; set; } = 50;
 
     /// <summary>
-    /// Enable chat history
-    /// </summary>
-    public bool EnableChatHistory { get; set; } = true;
-
-    /// <summary>
-    /// Days to retain chat history (0 = forever)
+    /// Days to retain chat history (0 = no history, 1 = today only, 7/30/90 = retention period)
+    /// Messages older than this will not be loaded into conversation context
     /// </summary>
     public int ChatHistoryRetentionDays { get; set; } = 90;
 

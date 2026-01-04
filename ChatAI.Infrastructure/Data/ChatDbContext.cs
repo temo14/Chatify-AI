@@ -287,7 +287,6 @@ public class ChatDbContext : DbContext
             entity.Property(e => e.EnableDocumentChunking).IsRequired().HasDefaultValue(true);
             entity.Property(e => e.ChunkSize).IsRequired().HasDefaultValue(512);
             entity.Property(e => e.ChunkOverlap).IsRequired().HasDefaultValue(50);
-            entity.Property(e => e.EnableChatHistory).IsRequired().HasDefaultValue(true);
             entity.Property(e => e.ChatHistoryRetentionDays).IsRequired().HasDefaultValue(90);
             entity.Property(e => e.EnableFeedback).IsRequired().HasDefaultValue(true);
             entity.Property(e => e.WelcomeMessage).HasMaxLength(500);

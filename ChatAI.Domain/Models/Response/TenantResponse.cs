@@ -30,7 +30,6 @@ public class TenantSettingsResponse
     public bool EnableDocumentChunking { get; set; }
     public int ChunkSize { get; set; }
     public int ChunkOverlap { get; set; }
-    public bool EnableChatHistory { get; set; }
     public int ChatHistoryRetentionDays { get; set; }
     public bool EnableFeedback { get; set; }
     public bool EnableOverview { get; set; }

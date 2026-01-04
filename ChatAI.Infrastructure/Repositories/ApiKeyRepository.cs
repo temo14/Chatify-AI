@@ -1,6 +1,6 @@
+using ChatAI.Domain.Entities;
 using ChatAI.Domain.Interfaces.Repositories;
 using ChatAI.Domain.Interfaces.Services;
-using ChatAI.Domain.Entities;
 using ChatAI.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -26,8 +26,10 @@ public class ApiKeyRepository : IApiKeyRepository
     
     public async Task<ApiKey?> GetByKeyHashAsync(string keyHash, CancellationToken cancellationToken = default)
     {
-        // Query filter automatically applies tenant isolation
+        // API key lookup must bypass tenant filter - the API key PROVIDES the tenant context during authentication
+        // Without IgnoreQueryFilters(), the query would filter by TenantId which is not yet set
         return await _context.ApiKeys
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(k => k.KeyHash == keyHash, cancellationToken);
     }
     

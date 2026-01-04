@@ -68,7 +68,7 @@
     <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div class="container mx-auto px-6">
             <nav class="flex space-x-8" role="tablist">
-                <button onclick="switchTab('overview', event)" class="tab-btn active" data-tab="overview">
+                <button onclick="switchTab('overview', event)" class="tab-btn" data-tab="overview">
                     <i class="fas fa-chart-line mr-2"></i> Overview
                 </button>
                 <button onclick="switchTab('knowledge', event)" class="tab-btn" data-tab="knowledge">
@@ -77,9 +77,12 @@
                 <button onclick="switchTab('chatSettings', event)" class="tab-btn" data-tab="chatSettings" id="chatSettingsTab" style="display:none;">
                     <i class="fas fa-comments mr-2"></i> Chat Settings
                 </button>
+                <!-- Global Config tab hidden - all settings managed via appsettings.json and per-tenant settings -->
+                <!--
                 <button onclick="switchTab('configuration', event)" class="tab-btn" data-tab="configuration" id="configurationTab" style="display:none;">
                     <i class="fas fa-cog mr-2"></i> Global Config
                 </button>
+                -->
                 <button onclick="switchTab('feedback', event)" class="tab-btn" data-tab="feedback">
                     <i class="fas fa-comment mr-2"></i> Feedback
                 </button>
@@ -97,7 +100,7 @@
     <main class="container mx-auto px-6 py-8">
         
         <!-- Overview Tab -->
-        <div id="overview" class="tab-content active">
+        <div id="overview" class="tab-content">
             <!-- Stats Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <div class="stat-card">
@@ -386,47 +389,7 @@
                         </p>
                     </div>
 
-                    <!-- Feature Toggles -->
-                    <div class="border-t border-gray-200 dark:border-gray-700 pt-6">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                            <i class="fas fa-toggle-on mr-2"></i> Features
-                        </h3>
 
-                        <div class="space-y-3">
-                            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">Chat History</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">Store conversation history</p>
-                                </div>
-                                <label class="toggle">
-                                    <input type="checkbox" id="settingsEnableChatHistory">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">User Feedback</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">Allow thumbs up/down on responses</p>
-                                </div>
-                                <label class="toggle">
-                                    <input type="checkbox" id="settingsEnableFeedback">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-
-                            <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                <div>
-                                    <p class="font-medium text-gray-900 dark:text-white">AI Tools</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">Enable function calling capabilities</p>
-                                </div>
-                                <label class="toggle">
-                                    <input type="checkbox" id="settingsEnableTools">
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
 
                     <!-- Action Buttons -->
                     <div class="flex gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -452,22 +415,27 @@
         <div id="configuration" class="tab-content">
             <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-6">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-xl font-bold text-gray-900 dark:text-white">
-                        <i class="fas fa-sliders-h mr-2"></i> System Configuration
-                    </h2>
-                    <button onclick="initializeDefaults()" class="btn-secondary">
-                        <i class="fas fa-database mr-2"></i> Initialize Defaults
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900 dark:text-white">
+                            <i class="fas fa-sliders-h mr-2"></i> Platform Configuration
+                        </h2>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            Global system settings that apply across all tenants
+                        </p>
+                    </div>
+                    <button onclick="loadConfigurations()" class="btn-secondary">
+                        <i class="fas fa-sync mr-2"></i> Refresh
                     </button>
                 </div>
 
                 <div class="mb-6">
                     <select id="categoryFilter" class="form-input max-w-xs" onchange="loadConfigurations()">
                         <option value="">All Categories</option>
-                        <option value="AI">AI Settings</option>
-                        <option value="RAG">RAG Settings</option>
-                        <option value="Features">Features</option>
+                        <option value="Tenant">Tenant Defaults</option>
                         <option value="Security">Security</option>
-                        <option value="Branding">Branding</option>
+                        <option value="Platform">Platform Features</option>
+                        <option value="RateLimit">Rate Limiting</option>
+                        <option value="Cache">Cache Settings</option>
                     </select>
                 </div>
 
@@ -865,6 +833,26 @@
                                 <span class="text-xs text-gray-500 dark:text-gray-400 block">Allows tenant to configure support email and send messages</span>
                             </label>
                         </div>
+
+                        <div class="flex items-center gap-2">
+                            <label class="toggle">
+                                <input type="checkbox" id="tenantEnableTools" checked>
+                                <span class="slider"></span>
+                            </label>
+                            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Enable AI Tools (Function Calling)
+                                <span class="text-xs text-gray-500 dark:text-gray-400 block">Allows AI to use search_knowledge and send_email functions</span>
+                            </label>
+                        </div>
+
+                        <div>
+                            <label for="tenantChatHistoryRetentionDays" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Chat History Retention (Days)
+                            </label>
+                            <input type="number" id="tenantChatHistoryRetentionDays" min="0" max="3650" value="90" 
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <span class="text-xs text-gray-500 dark:text-gray-400">0 = no history, 1 = today only, 7/30/90/365 = retention period</span>
+                        </div>
                     </div>
                 </div>
 
@@ -1118,6 +1106,12 @@
                     
                     applyTenantSettings();
                     return tenantSettings;
+                } else if (res.status === 404) {
+                    // Tenant not found - user's tenant was deleted, logout and redirect
+                    console.error('[SETTINGS] Tenant not found (404) - logging out');
+                    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+                    window.location.href = '/admin-login.html';
+                    return null;
                 } else {
                     const errorText = await res.text();
                     console.error('[SETTINGS] Failed to load settings. Status:', res.status, 'Error:', errorText);
@@ -1181,16 +1175,16 @@
                 
                 // Show/hide tabs based on role
                 const tenantsTab = document.getElementById('tenantsTab');
-                const configurationTab = document.getElementById('configurationTab');
                 const chatSettingsTab = document.getElementById('chatSettingsTab');
                 
                 if (tenantsTab) {
                     tenantsTab.style.display = isPlatformAdmin ? 'flex' : 'none';
                 }
                 
-                if (configurationTab) {
-                    configurationTab.style.display = isPlatformAdmin ? 'flex' : 'none';
-                }
+                // Global Config tab permanently hidden - not implemented
+                // if (configurationTab) {
+                //     configurationTab.style.display = isPlatformAdmin ? 'flex' : 'none';
+                // }
                 
                 if (chatSettingsTab) {
                     chatSettingsTab.style.display = 'flex';
@@ -1379,6 +1373,8 @@
                 document.getElementById('tenantEnableOverview').checked = tenant.settings?.enableOverview ?? true;
                 document.getElementById('tenantEnableFeedback').checked = tenant.settings?.enableFeedback ?? true;
                 document.getElementById('tenantEnableEmailSupport').checked = tenant.settings?.enableEmailSupport ?? false;
+                document.getElementById('tenantEnableTools').checked = tenant.settings?.enableTools ?? true;
+                document.getElementById('tenantChatHistoryRetentionDays').value = tenant.settings?.chatHistoryRetentionDays ?? 90;
                 document.getElementById('tenantActive').checked = tenant.isActive;
                 
                 // Hide admin credentials section when editing
@@ -1634,7 +1630,8 @@
                         enableOverview: document.getElementById('tenantEnableOverview').checked,
                         enableFeedback: document.getElementById('tenantEnableFeedback').checked,
                         enableEmailSupport: document.getElementById('tenantEnableEmailSupport').checked,
-                        enableFeedback: document.getElementById('tenantEnableFeedback').checked,
+                        enableTools: document.getElementById('tenantEnableTools').checked,
+                        chatHistoryRetentionDays: parseInt(document.getElementById('tenantChatHistoryRetentionDays').value),
                         isActive: document.getElementById('tenantActive').checked
                     };
                     
@@ -2236,9 +2233,7 @@
                         <div class="text-center py-12 text-gray-400">
                             <i class="fas fa-inbox text-4xl mb-2"></i>
                             <p>No configurations found</p>
-                            <button onclick="initializeDefaults()" class="btn-primary mt-4">
-                                Initialize Defaults
-                            </button>
+                            <p class="text-sm mt-2">Configurations are automatically created on first run</p>
                         </div>
                     `;
                     return;
@@ -2251,16 +2246,32 @@
                     return acc;
                 }, {});
 
-                list.innerHTML = Object.entries(grouped).map(([cat, items]) => `
-                    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                        <h3 class="font-bold text-gray-900 dark:text-white mb-3 flex items-center">
-                            <i class="fas fa-folder mr-2 text-primary"></i> ${cat}
-                        </h3>
-                        <div class="space-y-3">
-                            ${items.map(config => renderConfigItem(config)).join('')}
+                // Category metadata
+                const categoryInfo = {
+                    'Tenant': { icon: 'fa-building', color: 'text-blue-600', desc: 'Default settings for new tenants' },
+                    'Security': { icon: 'fa-shield-alt', color: 'text-red-600', desc: 'Authentication and authorization settings' },
+                    'Platform': { icon: 'fa-globe', color: 'text-green-600', desc: 'Platform-wide feature flags' },
+                    'RateLimit': { icon: 'fa-tachometer-alt', color: 'text-yellow-600', desc: 'API rate limiting configuration' },
+                    'Cache': { icon: 'fa-database', color: 'text-purple-600', desc: 'Cache expiration settings' }
+                };
+
+                list.innerHTML = Object.entries(grouped).map(([cat, items]) => {
+                    const info = categoryInfo[cat] || { icon: 'fa-folder', color: 'text-gray-600', desc: '' };
+                    return `
+                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                            <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 p-4 border-b border-gray-200 dark:border-gray-700">
+                                <h3 class="font-bold text-gray-900 dark:text-white flex items-center">
+                                    <i class="fas ${info.icon} mr-2 ${info.color}"></i> ${cat}
+                                    <span class="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">(${items.length} settings)</span>
+                                </h3>
+                                ${info.desc ? `<p class="text-xs text-gray-600 dark:text-gray-400 mt-1">${info.desc}</p>` : ''}
+                            </div>
+                            <div class="p-4 space-y-3">
+                                ${items.map(config => renderConfigItem(config)).join('')}
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
             } catch (error) {
                 console.error('Failed to load configurations:', error);
                 showToast('Failed to load configurations', 'error');
@@ -2435,11 +2446,6 @@
                     document.getElementById('settingsTemperature').value = settings.temperature || 0.7;
                     document.getElementById('tempValue').textContent = settings.temperature || 0.7;
                     document.getElementById('settingsMaxTokens').value = settings.maxTokens || 2000;
-                    
-                    // Feature toggles
-                    document.getElementById('settingsEnableChatHistory').checked = settings.enableChatHistory ?? true;
-                    document.getElementById('settingsEnableFeedback').checked = settings.enableFeedback ?? true;
-                    document.getElementById('settingsEnableTools').checked = settings.enableTools ?? false;
                 }
                 
                 // Show success indicator
@@ -2464,10 +2470,7 @@
                 chatPlaceholder: document.getElementById('settingsChatPlaceholder').value,
                 supportEmail: document.getElementById('settingsSupportEmail').value,
                 temperature: parseFloat(document.getElementById('settingsTemperature').value),
-                maxTokens: parseInt(document.getElementById('settingsMaxTokens').value),
-                enableChatHistory: document.getElementById('settingsEnableChatHistory').checked,
-                enableFeedback: document.getElementById('settingsEnableFeedback').checked,
-                enableTools: document.getElementById('settingsEnableTools').checked
+                maxTokens: parseInt(document.getElementById('settingsMaxTokens').value)
             };
             
             try {
@@ -2558,8 +2561,28 @@
             
             await loadTenantSettings();
             initializeDarkMode();
-            loadOverview();
+            
+            // Switch to first available tab based on tenant settings
+            switchToFirstAvailableTab();
         });
+        
+        function switchToFirstAvailableTab() {
+            // Get all visible tabs in order of priority
+            const tabs = ['overview', 'knowledge', 'chatSettings', 'configuration', 'feedback', 'tenants', 'apikeys'];
+            
+            for (const tabName of tabs) {
+                const tabButton = document.querySelector(`[data-tab="${tabName}"]`);
+                if (tabButton && tabButton.style.display !== 'none') {
+                    console.log('[INIT] Switching to first available tab:', tabName);
+                    switchTab(tabName);
+                    return;
+                }
+            }
+            
+            // Fallback to knowledge if all else fails
+            console.log('[INIT] No visible tabs found, defaulting to knowledge');
+            switchTab('knowledge');
+        }
     </script>
 </body>
 </html>

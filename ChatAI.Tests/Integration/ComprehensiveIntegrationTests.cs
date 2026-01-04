@@ -145,7 +145,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
             Id = Guid.NewGuid(),
             TenantId = _tenantAId,
             VectorStorageMode = "SQL",
-            EnableChatHistory = true
+            ChatHistoryRetentionDays = 90
         };
 
         var settingsB = new TenantSettings
@@ -153,7 +153,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
             Id = Guid.NewGuid(),
             TenantId = _tenantBId,
             VectorStorageMode = "SQL",
-            EnableChatHistory = true
+            ChatHistoryRetentionDays = 90
         };
 
         // API Keys

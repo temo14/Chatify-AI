@@ -59,7 +59,6 @@ public class GetTenantQueryHandler : IRequestHandler<GetTenantQuery, TenantRespo
                 EnableDocumentChunking = tenant.Settings.EnableDocumentChunking,
                 ChunkSize = tenant.Settings.ChunkSize,
                 ChunkOverlap = tenant.Settings.ChunkOverlap,
-                EnableChatHistory = tenant.Settings.EnableChatHistory,
                 ChatHistoryRetentionDays = tenant.Settings.ChatHistoryRetentionDays,
                 EnableFeedback = tenant.Settings.EnableFeedback,
                 EnableOverview = tenant.Settings.EnableOverview,

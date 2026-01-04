@@ -62,8 +62,6 @@ public class UpdateTenantSettingsCommandHandler : IRequestHandler<UpdateTenantSe
                 tenant.Settings.ChunkOverlap = request.ChunkOverlap.Value;
 
             // Feature Toggles
-            if (request.EnableChatHistory.HasValue) 
-                tenant.Settings.EnableChatHistory = request.EnableChatHistory.Value;
             if (request.ChatHistoryRetentionDays.HasValue) 
                 tenant.Settings.ChatHistoryRetentionDays = request.ChatHistoryRetentionDays.Value;
             if (request.EnableFeedback.HasValue) 
@@ -116,7 +114,6 @@ public class UpdateTenantSettingsCommandHandler : IRequestHandler<UpdateTenantSe
                 EnableDocumentChunking = tenant.Settings.EnableDocumentChunking,
                 ChunkSize = tenant.Settings.ChunkSize,
                 ChunkOverlap = tenant.Settings.ChunkOverlap,
-                EnableChatHistory = tenant.Settings.EnableChatHistory,
                 ChatHistoryRetentionDays = tenant.Settings.ChatHistoryRetentionDays,
                 EnableFeedback = tenant.Settings.EnableFeedback,
                 EnableOverview = tenant.Settings.EnableOverview,

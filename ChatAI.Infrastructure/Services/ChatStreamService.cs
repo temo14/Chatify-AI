@@ -236,15 +236,27 @@ public class ChatStreamService : IChatStreamService
         var systemPrompt = BuildSystemPromptWithRAG(knowledgeDocs, settings.SystemPrompt ?? "You are a helpful AI assistant.");
         chatHistory.AddSystemMessage(systemPrompt);
 
-        // Load previous messages with pagination (only load what we need)
+        // Load previous messages with retention days filtering
         var historyCacheKey = CacheKeyBuilder.ConversationHistory(sessionId, _tenantContext.RequiredTenantId);
-        var recentMessages = await _cacheService.GetOrCreateAsync(
+        var allMessages = await _cacheService.GetOrCreateAsync(
             historyCacheKey,
             async () => await _sessionRepository.GetSessionMessagesAsync(
                 sessionId, 
                 skip: 0, 
                 take: _options.MaxConversationHistory).ConfigureAwait(false),
             TimeSpan.FromMinutes(_cacheOptions.ConversationExpirationMinutes)).ConfigureAwait(false);
+        
+        // Filter by retention days
+        List<ChatMessage> recentMessages;
+        if (settings.ChatHistoryRetentionDays <= 0)
+        {
+            recentMessages = new List<ChatMessage>(); // No history
+        }
+        else
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-settings.ChatHistoryRetentionDays);
+            recentMessages = allMessages.Where(m => m.Timestamp >= cutoffDate).ToList();
+        }
         
         // Add historical messages (already sorted and limited by pagination)
         foreach (var msg in recentMessages)

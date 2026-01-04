@@ -27,10 +27,12 @@ public class UpdateTenantCommand : IRequest<TenantResponse>
     public double? Temperature { get; set; }
     public int? MaxTokens { get; set; }
     public string? SystemPrompt { get; set; }
+    public int? ChatHistoryRetentionDays { get; set; }
     public bool? EnableFeedback { get; set; }
     public bool? EnableOverview { get; set; }
     public bool? EnableEmailSupport { get; set; }
     public string? SupportEmail { get; set; }
+    public bool? EnableTools { get; set; }
 }
 
 public class UpdateTenantCommandHandler : IRequestHandler<UpdateTenantCommand, TenantResponse>
@@ -76,10 +78,12 @@ public class UpdateTenantCommandHandler : IRequestHandler<UpdateTenantCommand, T
             if (request.Temperature.HasValue) tenant.Settings.Temperature = request.Temperature.Value;
             if (request.MaxTokens.HasValue) tenant.Settings.MaxTokens = request.MaxTokens.Value;
             if (request.SystemPrompt != null) tenant.Settings.SystemPrompt = request.SystemPrompt;
+            if (request.ChatHistoryRetentionDays.HasValue) tenant.Settings.ChatHistoryRetentionDays = request.ChatHistoryRetentionDays.Value;
             if (request.EnableFeedback.HasValue) tenant.Settings.EnableFeedback = request.EnableFeedback.Value;
             if (request.EnableOverview.HasValue) tenant.Settings.EnableOverview = request.EnableOverview.Value;
             if (request.EnableEmailSupport.HasValue) tenant.Settings.EnableEmailSupport = request.EnableEmailSupport.Value;
             if (request.SupportEmail != null) tenant.Settings.SupportEmail = request.SupportEmail;
+            if (request.EnableTools.HasValue) tenant.Settings.EnableTools = request.EnableTools.Value;
             tenant.Settings.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -119,7 +123,6 @@ public class UpdateTenantCommandHandler : IRequestHandler<UpdateTenantCommand, T
                 EnableDocumentChunking = tenant.Settings.EnableDocumentChunking,
                 ChunkSize = tenant.Settings.ChunkSize,
                 ChunkOverlap = tenant.Settings.ChunkOverlap,
-                EnableChatHistory = tenant.Settings.EnableChatHistory,
                 ChatHistoryRetentionDays = tenant.Settings.ChatHistoryRetentionDays,
                 EnableFeedback = tenant.Settings.EnableFeedback,
                 EnableOverview = tenant.Settings.EnableOverview,

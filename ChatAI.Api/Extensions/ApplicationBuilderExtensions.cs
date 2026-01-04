@@ -1,7 +1,5 @@
-﻿using Azure.Identity;
-using ChatAI.Domain.Interfaces.Services;
+﻿using ChatAI.Domain.Interfaces.Services;
 using ChatAI.Infrastructure.Data;
-using ChatAI.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatAI.Api.Extensions;

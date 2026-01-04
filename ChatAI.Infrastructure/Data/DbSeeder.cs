@@ -1,13 +1,10 @@
+using ChatAI.Domain.Entities;
 using ChatAI.Domain.Interfaces.Repositories;
 using ChatAI.Domain.Interfaces.Services;
-using ChatAI.Domain.Entities;
-using ChatAI.Domain.Enums;
-using ChatAI.Infrastructure.Interfaces;
-using OpenAI.Embeddings;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace ChatAI.Infrastructure.Data;
 
@@ -24,7 +21,7 @@ public class DbSeeder
     private readonly IServiceProvider _serviceProvider;
 
     public DbSeeder(
-        ChatDbContext context, 
+        ChatDbContext context,
         IAuthService authService,
         IConfiguration configuration,
         ILogger<DbSeeder> logger,
@@ -50,9 +47,6 @@ public class DbSeeder
                 await SeedTestTenantsAsync();
             }
 
-            // 3. Seed platform-level admin configurations
-            await SeedAdminConfigurationsAsync();
-
             // Check if database already has knowledge data
             // Must ignore query filters since TenantContext isn't set during seeding
             if (await _context.KnowledgeDocuments.IgnoreQueryFilters().AnyAsync())
@@ -65,80 +59,6 @@ public class DbSeeder
 
             // 4. Seed demo knowledge base for testing ChatifyAI
             await SeedDemoKnowledgeAsync(dottTenant.Id);
-
-            await _context.SaveChangesAsync();
-            
-            // 5. Generate embeddings for demo documents (async, non-blocking)
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(5000); // Wait for app startup to complete
-                    
-                    using var scope = _serviceProvider.CreateScope();
-                    var embeddingClient = scope.ServiceProvider.GetRequiredService<EmbeddingClient>();
-                    var vectorStorageFactory = scope.ServiceProvider.GetRequiredService<IVectorStorageFactory>();
-                    var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
-                    
-                    // Set tenant context for Dott tenant
-                    tenantContext.SetTenant(dottTenant.Id, dottTenant.Slug);
-                    
-                    // Get document IDs first
-                    List<Guid> docIds;
-                    using (var readContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>())
-                    {
-                        docIds = await readContext.KnowledgeDocuments
-                            .Where(d => d.TenantId == dottTenant.Id && string.IsNullOrEmpty(d.EmbeddingReference))
-                            .Select(d => d.Id)
-                            .ToListAsync();
-                    }
-                    
-                    if (docIds.Any())
-                    {
-                        _logger.LogInformation("Generating embeddings for {Count} demo documents (background task)...", docIds.Count);
-                        
-                        var vectorStorage = await vectorStorageFactory.CreateForCurrentTenantAsync();
-                        
-                        foreach (var docId in docIds)
-                        {
-                            try
-                            {
-                                // Use fresh context for each document to avoid tracking issues
-                                using var docContext = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
-                                var doc = await docContext.KnowledgeDocuments.FindAsync(docId);
-                                if (doc == null) continue;
-                                
-                                var embeddingResponse = await embeddingClient.GenerateEmbeddingAsync(doc.Content);
-                                var embedding = embeddingResponse.Value.ToFloats().ToArray();
-                                
-                                var metadata = new Dictionary<string, object>
-                                {
-                                    { "title", doc.Title },
-                                    { "category", doc.Category ?? "general" },
-                                    { "source", doc.Source ?? "unknown" }
-                                };
-                                
-                                await vectorStorage.StoreEmbeddingAsync(doc.Id, embedding, metadata);
-                                
-                                doc.EmbeddingReference = $"vector:{doc.Id}";
-                                await docContext.SaveChangesAsync();
-                                
-                                _logger.LogDebug("✓ Generated embedding for: {Title}", doc.Title);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Failed to generate embedding for document {Id}", docId);
-                            }
-                        }
-                        
-                        _logger.LogInformation("✓ Embedding generation completed");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error generating embeddings for demo documents");
-                }
-            });
 
             _logger.LogInformation("✓ Database seeding completed successfully");
         }
@@ -214,11 +134,11 @@ public class DbSeeder
             TenantId = dottTenant.Id,
             VectorStorageMode = "SQL",
             EnableDocumentChunking = true,
-            EnableChatHistory = true,
             ChatHistoryRetentionDays = 365,
             EnableFeedback = true,
             EnableOverview = true,
             EnableEmailSupport = true,
+            SupportEmail = "t.baindurashvili.gm@gmail.com",
             WelcomeMessage = "Welcome to ChatifyAI! How can I help you today?",
             Temperature = 0.7f,
             MaxTokens = 2000,
@@ -235,54 +155,20 @@ public class DbSeeder
     }
 
     /// <summary>
-    /// Seeds the platform admin user - YOUR account for managing the platform
-    /// Only platform admins can create and manage customer tenants
-    /// </summary>
-    private async Task SeedPlatformAdminAsync(Guid dottTenantId)
-    {
-        // Check if platform admin already exists
-        // Must ignore query filters since TenantContext isn't set during seeding
-        var existingAdmin = await _context.AdminUsers
-            .IgnoreQueryFilters()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.IsPlatformAdmin && u.TenantId == dottTenantId);
-        
-        if (existingAdmin != null)
-        {
-            _logger.LogInformation("Platform admin already exists");
-            return;
-        }
-
-        // Get credentials from configuration or use defaults
-        var username = _configuration["Admin:Username"] ?? "admin";
-        var password = _configuration["Admin:Password"] ?? "Admin@123456";
-        var email = _configuration["Admin:Email"] ?? "admin@chatify.ge";
-
-        var platformAdmin = new AdminUser
-        {
-            Id = Guid.NewGuid(),
-            Username = username,
-            PasswordHash = _authService.HashPassword(password),
-            Email = email,
-            FullName = "Platform Administrator",
-            TenantId = dottTenantId,
-            IsPlatformAdmin = true, // Critical: Enables tenant management
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.AdminUsers.Add(platformAdmin);
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation("✓ Created platform admin: {Username}", username);
-    }
-
-    /// <summary>
     /// Seed demo knowledge base for testing ChatifyAI functionality
     /// These are example documents to demonstrate RAG capabilities
     /// </summary>
     private async Task SeedDemoKnowledgeAsync(Guid tenantId)
     {
+        using var scope = _serviceProvider.CreateScope();
+        var knowledgeRepository = scope.ServiceProvider.GetRequiredService<IKnowledgeRepository>();
+        var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
+        var tenant = await _context.Tenants.FindAsync(tenantId);
+        
+        if (tenant == null) return;
+        
+        tenantContext.SetTenant(tenant.Id, tenant.Slug);
+
         var knowledgeDocs = new List<KnowledgeDocument>
         {
             new KnowledgeDocument
@@ -312,6 +198,7 @@ public class DbSeeder
             new KnowledgeDocument
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantId,
                 Title = "Product Warranty Information",
                 Content = @"All products come with a standard 1-year manufacturer warranty.
                 
@@ -339,6 +226,7 @@ public class DbSeeder
             new KnowledgeDocument
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantId,
                 Title = "Shipping and Delivery",
                 Content = @"We offer multiple shipping options to meet your needs:
                 
@@ -365,6 +253,7 @@ public class DbSeeder
             new KnowledgeDocument
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantId,
                 Title = "Technical Support FAQ",
                 Content = @"Frequently Asked Questions about our technical support:
                 
@@ -393,6 +282,7 @@ public class DbSeeder
             new KnowledgeDocument
             {
                 Id = Guid.NewGuid(),
+                TenantId = tenantId,
                 Title = "Account Management Guide",
                 Content = @"Managing your company account is easy and secure.
                 
@@ -424,131 +314,14 @@ public class DbSeeder
             }
         };
 
-        _context.KnowledgeDocuments.AddRange(knowledgeDocs);
-        _logger.LogInformation("Added {Count} demo knowledge documents for Dott tenant", knowledgeDocs.Count);
-    }
-
-    /// <summary>
-    /// Seeds platform-level admin configurations (system defaults)
-    /// These are global settings used across the platform
-    /// </summary>
-    private async Task SeedAdminConfigurationsAsync()
-    {
-        // Check if admin configurations already exist
-        if (await _context.AdminConfigurations.AnyAsync())
+        _logger.LogInformation("Adding {Count} demo knowledge documents...", knowledgeDocs.Count);
+        
+        foreach (var doc in knowledgeDocs)
         {
-            _logger.LogInformation("AdminConfigurations already seeded");
-            return;
+            await knowledgeRepository.AddAsync(doc);
         }
-
-        var now = DateTime.UtcNow;
-        var adminConfigs = new List<AdminConfiguration>
-        {
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "AI.DefaultSystemPrompt",
-                Value = @"You are ChatifyAI, an intelligent conversational assistant.
-
-                ## CORE ABILITIES
-                - Knowledge Base Access: Search and retrieve information from integrated knowledge repository
-                - Email Support Tool: Send detailed support emails to administrators when needed
-                - Conversation Memory: Maintain context across conversations
-
-                ## OPERATING PRINCIPLES
-                1. ACCURACY FIRST: Base responses on knowledge base, clearly state limitations
-                2. CLARITY: Use clear formatting, adapt technical depth to user expertise
-                3. PROACTIVE: Anticipate follow-up questions, offer to escalate issues
-                4. PROFESSIONAL: Friendly yet professional tone, respect privacy",
-                DataType = "String",
-                Category = "AI",
-                Description = "Default system prompt for AI conversations",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "AI.DefaultTemperature",
-                Value = "0.7",
-                DataType = "Float",
-                Category = "AI",
-                Description = "Default temperature for AI responses (0.0-1.0)",
-                ValidationRule = "range:0,1",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "AI.DefaultMaxTokens",
-                Value = "2000",
-                DataType = "Integer",
-                Category = "AI",
-                Description = "Default maximum tokens for AI responses",
-                ValidationRule = "range:100,4000",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "Features.EmailSupportEnabled",
-                Value = "true",
-                DataType = "Boolean",
-                Category = "Features",
-                Description = "Enable/disable email support tool globally",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "Features.DocumentChunkingEnabled",
-                Value = "true",
-                DataType = "Boolean",
-                Category = "Features",
-                Description = "Enable/disable document chunking for large documents",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "VectorStorage.QdrantThreshold",
-                Value = "100",
-                DataType = "Integer",
-                Category = "VectorStorage",
-                Description = "Document count threshold for switching from SQL to Qdrant",
-                ValidationRule = "min:1",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            },
-            new()
-            {
-                Id = Guid.NewGuid(),
-                Key = "Security.SessionExpirationMinutes",
-                Value = "60",
-                DataType = "Integer",
-                Category = "Security",
-                Description = "JWT session expiration in minutes",
-                ValidationRule = "range:5,1440",
-                IsActive = true,
-                ModifiedBy = "System",
-                CreatedAt = now
-            }
-        };
-
-        _context.AdminConfigurations.AddRange(adminConfigs);
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation("✓ Seeded {Count} platform admin configurations", adminConfigs.Count);
+        
+        _logger.LogInformation("✓ Added {Count} demo knowledge documents with embeddings", knowledgeDocs.Count);
     }
 
     /// <summary>
@@ -597,7 +370,6 @@ public class DbSeeder
                 TenantId = tenantAId,
                 VectorStorageMode = "SQL",
                 EnableDocumentChunking = true,
-                EnableChatHistory = true,
                 ChatHistoryRetentionDays = 90,
                 EnableFeedback = true,
                 EnableOverview = true,
@@ -605,6 +377,11 @@ public class DbSeeder
                 Temperature = 0.7f,
                 MaxTokens = 2000,
                 EnableTools = true,
+                SystemPrompt = "You are the AI assistant for Test Tenant A, a multi-tenant testing environment. " +
+                              "You help users test and explore the AI assistant capabilities. " +
+                              "You can search the knowledge base for information and provide helpful responses. " +
+                              "If you need assistance or encounter issues, direct users to contact admin@tenanta.com. " +
+                              "Be professional, accurate, and helpful in all interactions.",
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -658,7 +435,6 @@ public class DbSeeder
                 TenantId = tenantBId,
                 VectorStorageMode = "SQL",
                 EnableDocumentChunking = true,
-                EnableChatHistory = true,
                 ChatHistoryRetentionDays = 180,
                 EnableFeedback = true,
                 EnableOverview = true,
@@ -666,6 +442,11 @@ public class DbSeeder
                 Temperature = 0.8f,
                 MaxTokens = 3000,
                 EnableTools = true,
+                SystemPrompt = "You are the AI assistant for Test Tenant B, a professional services company. " +
+                              "You help customers with questions about our services, policies, and support. " +
+                              "You can search our knowledge base to provide accurate information. " +
+                              "Always be professional, friendly, and concise. " +
+                              "If you cannot help with something, suggest contacting our team at admin@tenantb.com.",
                 CreatedAt = DateTime.UtcNow
             };
 

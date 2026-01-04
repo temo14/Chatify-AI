@@ -70,6 +70,14 @@ public class EmailPlugin
             }
 
             var tenant = await _tenantRepository.GetByIdAsync(tenantId.Value);
+            
+            // Check if email support is enabled for this tenant
+            if (tenant?.Settings?.EnableEmailSupport != true)
+            {
+                _logger.LogWarning("Email support is disabled for tenant {TenantId}", tenantId);
+                return "⚠️ Email support is not available. Please contact your administrator through alternative channels.";
+            }
+            
             var supportEmail = tenant?.Settings?.SupportEmail;
             
             if (string.IsNullOrWhiteSpace(supportEmail))
@@ -139,6 +147,14 @@ public class EmailPlugin
         }
 
         var tenant = await _tenantRepository.GetByIdAsync(tenantId!.Value);
+        
+        // Check if email support is enabled for this tenant
+        if (tenant?.Settings?.EnableEmailSupport != true)
+        {
+            _logger.LogWarning("Email support is disabled for tenant {TenantId}", tenantId);
+            return "⚠️ Email support is not available. Please contact your administrator through alternative channels.";
+        }
+        
         var supportEmail = tenant?.Settings?.SupportEmail;
         
         if (string.IsNullOrWhiteSpace(supportEmail))
@@ -200,6 +216,14 @@ public class EmailPlugin
         }
 
         var tenant = await _tenantRepository.GetByIdAsync(tenantId!.Value);
+        
+        // Check if email support is enabled for this tenant
+        if (tenant?.Settings?.EnableEmailSupport != true)
+        {
+            _logger.LogWarning("Email support is disabled for tenant {TenantId}", tenantId);
+            return "⚠️ Email support is not available. Please contact your administrator through alternative channels.";
+        }
+        
         var supportEmail = tenant?.Settings?.SupportEmail;
         
         if (string.IsNullOrWhiteSpace(supportEmail))

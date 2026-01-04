@@ -114,14 +114,9 @@ public static class ServiceCollectionExtensions
 
             var kernel = ChatAI.Infrastructure.AI.SemanticKernelFactory.CreateKernel(config, sp);
             
-            // Add plugins with scoped dependencies
-            kernel.Plugins.AddFromObject(
-                sp.GetRequiredService<ChatAI.Application.Plugins.EmailPlugin>(),
-                "EmailPlugin");
-            
-            kernel.Plugins.AddFromObject(
-                sp.GetRequiredService<ChatAI.Application.Plugins.KnowledgePlugin>(),
-                "KnowledgePlugin");
+            // NOTE: Plugins are NOT registered here - they are registered per-request
+            // in SemanticKernelChatService to respect tenant feature toggles
+            // (EnableTools, EnableEmailSupport, etc.)
             
             return kernel;
         });

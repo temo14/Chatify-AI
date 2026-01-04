@@ -29,7 +29,6 @@ public class UpdateTenantSettingsCommand : IRequest<TenantResponse>
     public int? ChunkOverlap { get; set; }
     
     // Feature Toggles
-    public bool? EnableChatHistory { get; set; }
     public int? ChatHistoryRetentionDays { get; set; }
     public bool? EnableFeedback { get; set; }
     public bool? EnableOverview { get; set; }
