@@ -1,5 +1,6 @@
 using ChatAI.Domain.Entities;
 using ChatAI.Domain.Interfaces.Services;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace ChatAI.Infrastructure.Data;
@@ -8,7 +9,7 @@ namespace ChatAI.Infrastructure.Data;
 /// Database context for Chatify AI
 /// Multi-tenant system with global query filters
 /// </summary>
-public class ChatDbContext : DbContext
+public class ChatDbContext : DbContext, IDataProtectionKeyContext
 {
     private readonly ITenantContext? _tenantContext;
 
@@ -18,6 +19,9 @@ public class ChatDbContext : DbContext
     {
         _tenantContext = tenantContext;
     }
+    
+    // Data Protection Keys (for encryption)
+    public DbSet<DataProtectionKey> DataProtectionKeys { get; set; } = null!;
     
     // Multi-tenancy
     public DbSet<Tenant> Tenants { get; set; } = null!;
@@ -37,6 +41,11 @@ public class ChatDbContext : DbContext
     // Authentication
     public DbSet<AdminUser> AdminUsers { get; set; } = null!;
     public DbSet<ApiKey> ApiKeys { get; set; } = null!;
+    
+    // Meta Channels Integration
+    public DbSet<MetaChannelConnection> MetaChannelConnections { get; set; } = null!;
+    public DbSet<MetaInboundDedupe> MetaInboundDedupes { get; set; } = null!;
+    public DbSet<MetaConversationMap> MetaConversationMaps { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -307,6 +316,122 @@ public class ChatDbContext : DbContext
             entity.HasIndex(e => e.TenantId).IsUnique().HasDatabaseName("IX_TenantSettings_TenantId");
         });
         
+        // ===== META CHANNEL CONNECTION =====
+        modelBuilder.Entity<MetaChannelConnection>(entity =>
+        {
+            entity.ToTable("MetaChannelConnections");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.TenantId).IsRequired();
+            entity.Property(e => e.Channel).IsRequired().HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.WebhookId).IsRequired();
+            entity.Property(e => e.VerifyTokenHash).IsRequired().HasMaxLength(500);
+            entity.Property(e => e.VerifyTokenPlain).HasMaxLength(200);
+            entity.Property(e => e.MetaAppId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.MetaAppSecretEncrypted).IsRequired().HasMaxLength(1000);
+            entity.Property(e => e.AccessTokenEncrypted).IsRequired().HasMaxLength(2000);
+            entity.Property(e => e.TokenKeyVersion).IsRequired().HasDefaultValue(1);
+            
+            // Channel-specific identifiers (nullable)
+            entity.Property(e => e.FacebookPageId).HasMaxLength(100);
+            entity.Property(e => e.InstagramBusinessAccountId).HasMaxLength(100);
+            entity.Property(e => e.WhatsAppPhoneNumberId).HasMaxLength(100);
+            entity.Property(e => e.WhatsAppBusinessAccountId).HasMaxLength(100);
+            
+            // State and monitoring
+            entity.Property(e => e.IsActive).IsRequired().HasDefaultValue(true);
+            entity.Property(e => e.LastWebhookAt);
+            entity.Property(e => e.LastValidatedAt);
+            entity.Property(e => e.LastSendAt);
+            entity.Property(e => e.LastError).HasMaxLength(500);
+            entity.Property(e => e.LastErrorAt);
+            entity.Property(e => e.FailedSendCount).IsRequired().HasDefaultValue(0);
+            entity.Property(e => e.TokenExpiresAt);
+            entity.Property(e => e.TokenExpiryWarning).IsRequired().HasDefaultValue(false);
+            entity.Property(e => e.TokenExpiredAt);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.UpdatedAt).IsRequired();
+            
+            // Unique constraints - WebhookId must be globally unique
+            entity.HasIndex(e => e.WebhookId).IsUnique().HasDatabaseName("IX_MetaChannelConnections_WebhookId");
+            
+            // Unique constraints for channel identities (when not null)
+            entity.HasIndex(e => e.FacebookPageId).IsUnique().HasDatabaseName("IX_MetaChannelConnections_FacebookPageId")
+                .HasFilter("[FacebookPageId] IS NOT NULL");
+            entity.HasIndex(e => e.InstagramBusinessAccountId).IsUnique().HasDatabaseName("IX_MetaChannelConnections_InstagramBusinessAccountId")
+                .HasFilter("[InstagramBusinessAccountId] IS NOT NULL");
+            entity.HasIndex(e => e.WhatsAppPhoneNumberId).IsUnique().HasDatabaseName("IX_MetaChannelConnections_WhatsAppPhoneNumberId")
+                .HasFilter("[WhatsAppPhoneNumberId] IS NOT NULL");
+            
+            // Query indexes
+            entity.HasIndex(e => e.TenantId).HasDatabaseName("IX_MetaChannelConnections_TenantId");
+            entity.HasIndex(e => new { e.TenantId, e.Channel }).HasDatabaseName("IX_MetaChannelConnections_Tenant_Channel");
+            entity.HasIndex(e => new { e.TenantId, e.IsActive }).HasDatabaseName("IX_MetaChannelConnections_Tenant_Active");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_MetaChannelConnections_IsActive");
+            entity.HasIndex(e => e.TokenExpiryWarning).HasDatabaseName("IX_MetaChannelConnections_TokenExpiryWarning");
+        });
+        
+        // ===== META INBOUND DEDUPE =====
+        modelBuilder.Entity<MetaInboundDedupe>(entity =>
+        {
+            entity.ToTable("MetaInboundDedupes");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.ConnectionId).IsRequired();
+            entity.Property(e => e.MetaMessageId).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.ReceivedAt).IsRequired();
+            
+            // Unique constraint: one message per connection
+            entity.HasIndex(e => new { e.ConnectionId, e.MetaMessageId })
+                .IsUnique()
+                .HasDatabaseName("IX_MetaInboundDedupes_Connection_Message");
+            
+            // Query indexes
+            entity.HasIndex(e => e.ConnectionId).HasDatabaseName("IX_MetaInboundDedupes_ConnectionId");
+            entity.HasIndex(e => e.ReceivedAt).HasDatabaseName("IX_MetaInboundDedupes_ReceivedAt");
+            
+            // Relationship
+            entity.HasOne(e => e.Connection)
+                .WithMany()
+                .HasForeignKey(e => e.ConnectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        
+        // ===== META CONVERSATION MAP =====
+        modelBuilder.Entity<MetaConversationMap>(entity =>
+        {
+            entity.ToTable("MetaConversationMaps");
+            entity.HasKey(e => e.Id);
+            
+            entity.Property(e => e.Id).IsRequired();
+            entity.Property(e => e.ConnectionId).IsRequired();
+            entity.Property(e => e.ExternalUserId).IsRequired().HasMaxLength(200);
+            entity.Property(e => e.ChatSessionId).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.CreatedAt).IsRequired();
+            entity.Property(e => e.LastActivityAt).IsRequired();
+            entity.Property(e => e.IsOptedOut).IsRequired().HasDefaultValue(false);
+            entity.Property(e => e.OptedOutAt);
+            entity.Property(e => e.OptedInAt);
+            
+            // Unique constraint: one external user per connection
+            entity.HasIndex(e => new { e.ConnectionId, e.ExternalUserId })
+                .IsUnique()
+                .HasDatabaseName("IX_MetaConversationMaps_Connection_ExternalUser");
+            
+            // Query indexes
+            entity.HasIndex(e => e.ConnectionId).HasDatabaseName("IX_MetaConversationMaps_ConnectionId");
+            entity.HasIndex(e => e.ChatSessionId).HasDatabaseName("IX_MetaConversationMaps_ChatSessionId");
+            entity.HasIndex(e => e.LastActivityAt).HasDatabaseName("IX_MetaConversationMaps_LastActivityAt");
+            
+            // Relationship
+            entity.HasOne(e => e.Connection)
+                .WithMany()
+                .HasForeignKey(e => e.ConnectionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+        
         // ===== GLOBAL QUERY FILTERS (Multi-Tenancy) =====
         // Automatically filter all queries by current tenant
         if (_tenantContext != null)
@@ -318,6 +443,8 @@ public class ChatDbContext : DbContext
             modelBuilder.Entity<AdminUser>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
             // ApiKey.TenantId is string, so convert for comparison
             modelBuilder.Entity<ApiKey>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId.ToString());
+            // Meta channel connections
+            modelBuilder.Entity<MetaChannelConnection>().HasQueryFilter(e => e.TenantId == _tenantContext.TenantId);
         }
     }
 }

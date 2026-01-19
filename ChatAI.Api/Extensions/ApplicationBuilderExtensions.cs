@@ -38,7 +38,16 @@ public static class ApplicationBuilderExtensions
 
         // Run SQL Server migrations
         logger.LogInformation("Running database migrations...");
-        await db.Database.MigrateAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+            logger.LogInformation("✅ Database migrations completed successfully");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "❌ FATAL: Database migration failed! Application cannot start with mismatched schema.");
+            throw; // Crash the app - fail fast!
+        }
 
         // Seed data - runs in all environments on first startup
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();

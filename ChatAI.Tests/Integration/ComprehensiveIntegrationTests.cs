@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text;
 using ChatAI.Api.DTOs;
 using ChatAI.Api.DTOs.Knowledge;
@@ -53,7 +54,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
                 // Add test configuration
                 var testConfig = new Dictionary<string, string?>
                 {
-                    ["Jwt:SecretKey"] = "ThisIsATestSecretKeyForJwtTokenGeneration123456",
+                    ["Jwt:Secret"] = "ThisIsATestSecretKeyForJwtTokenGeneration123456",
                     ["Jwt:Issuer"] = "ChatAI.Test",
                     ["Jwt:Audience"] = "ChatAI.Test.Client",
                     ["Jwt:ExpirationMinutes"] = "60",
@@ -156,12 +157,18 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
             ChatHistoryRetentionDays = 90
         };
 
+        // API Keys (plain + hash must match production hashing rules)
+        _apiKeyA = "chatai_test_key_a_12345678901234567890";
+        _apiKeyB = "chatai_test_key_b_12345678901234567890";
+        var apiKeyHashA = HashApiKeySha256Base64(_apiKeyA);
+        var apiKeyHashB = HashApiKeySha256Base64(_apiKeyB);
+
         // API Keys
         var apiKeyEntityA = new ApiKey
         {
             Id = Guid.NewGuid(),
             ClientName = "Test Client A",
-            KeyHash = BCrypt.Net.BCrypt.HashPassword("test-key-a-12345678901234567890"),
+            KeyHash = apiKeyHashA,
             TenantId = _tenantAId.ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
@@ -171,14 +178,11 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
         {
             Id = Guid.NewGuid(),
             ClientName = "Test Client B",
-            KeyHash = BCrypt.Net.BCrypt.HashPassword("test-key-b-12345678901234567890"),
+            KeyHash = apiKeyHashB,
             TenantId = _tenantBId.ToString(),
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
-
-        _apiKeyA = "test-key-a-12345678901234567890";
-        _apiKeyB = "test-key-b-12345678901234567890";
 
         // Knowledge documents
         var docA = new KnowledgeDocument
@@ -306,7 +310,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
     public async Task ApiKeyAuthentication_WithValidKey_Succeeds()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/configuration");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/chat/sessions?userId=test-user");
         request.Headers.Add("X-API-Key", _apiKeyA);
 
         // Act
@@ -320,7 +324,7 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
     public async Task ApiKeyAuthentication_WithInvalidKey_Fails()
     {
         // Arrange
-        var request = new HttpRequestMessage(HttpMethod.Get, "/api/configuration");
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/chat/sessions?userId=test-user");
         request.Headers.Add("X-API-Key", "invalid-key-12345678901234567890");
 
         // Act
@@ -688,6 +692,13 @@ public class ComprehensiveIntegrationTests : IClassFixture<WebApplicationFactory
         var response = await _client.PostAsJsonAsync("/api/auth/login", loginDto);
         var result = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
         _tokenB = result!.Token;
+    }
+
+    private static string HashApiKeySha256Base64(string plainKey)
+    {
+        var bytes = Encoding.UTF8.GetBytes(plainKey);
+        var hash = SHA256.HashData(bytes);
+        return Convert.ToBase64String(hash);
     }
 
     #endregion

@@ -10,6 +10,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.SemanticKernel;
 using AzureOpenAISDK = Azure.AI.OpenAI.AzureOpenAIClient;
@@ -188,6 +189,57 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+    
+    /// <summary>
+    /// Add Meta Channels integration services (Messenger, Instagram, WhatsApp)
+    /// </summary>
+    public static IServiceCollection AddMetaChannelsServices(
+        this IServiceCollection services, 
+        IConfiguration configuration)
+    {
+        // Encryption (Data Protection)
+        // Keys persisted to SQL database to survive container restarts
+        services.AddDataProtection()
+            .PersistKeysToDbContext<ChatDbContext>()
+            .SetApplicationName("ChatAI");
+        
+        services.AddScoped<IEncryptionService, EncryptionService>();
+        
+        // Repositories
+        services.AddScoped<IMetaChannelConnectionRepository, ChatAI.Infrastructure.Repositories.MetaChannelConnectionRepository>();
+        services.AddScoped<IMetaInboundDedupeRepository, ChatAI.Infrastructure.Repositories.MetaInboundDedupeRepository>();
+        services.AddScoped<IMetaConversationMapRepository, ChatAI.Infrastructure.Repositories.MetaConversationMapRepository>();
+        
+        // Meta API clients
+        services.AddHttpClient();
+        services.AddScoped<IMetaMessengerClient, ChatAI.Infrastructure.Services.Meta.MetaMessengerClient>();
+        services.AddScoped<IMetaInstagramClient, ChatAI.Infrastructure.Services.Meta.MetaInstagramClient>();
+        services.AddScoped<IMetaWhatsAppClient, ChatAI.Infrastructure.Services.Meta.MetaWhatsAppClient>();
+        services.AddScoped<IMetaTokenValidator, ChatAI.Infrastructure.Services.Meta.MetaTokenValidator>();
+        services.AddScoped<ChatAI.Domain.Interfaces.Services.IMetaOAuthService, ChatAI.Infrastructure.Services.Meta.MetaOAuthService>();
+        
+        // Webhook infrastructure
+        services.AddSingleton<ChatAI.Infrastructure.Services.Meta.IMetaWebhookSignatureValidator, ChatAI.Infrastructure.Services.Meta.MetaWebhookSignatureValidator>();
+        
+        // Webhook queue: Use Azure Service Bus in production, in-memory for development
+        var serviceBusConnectionString = configuration["AzureServiceBus:ConnectionString"];
+        var useServiceBus = !string.IsNullOrEmpty(serviceBusConnectionString);
+        
+        if (useServiceBus)
+        {
+            // Production: Azure Service Bus (durable, scalable)
+            services.AddSingleton<IMetaWebhookQueue, ChatAI.Infrastructure.Services.Meta.AzureServiceBusMetaWebhookQueue>();
+            services.AddHostedService<ChatAI.Infrastructure.Services.Meta.AzureServiceBusMetaWebhookProcessor>();
+        }
+        else
+        {
+            // Development: In-memory queue (simple, not durable)
+            services.AddSingleton<IMetaWebhookQueue, ChatAI.Infrastructure.Services.Meta.InMemoryMetaWebhookQueue>();
+            services.AddHostedService<ChatAI.Infrastructure.Services.Meta.MetaWebhookProcessorService>();
+        }
+        
+        return services;
+    }
 
     /// <summary>
     /// Add health checks for external dependencies
@@ -211,6 +263,30 @@ public static class ServiceCollectionExtensions
             name: "sqlserver",
             tags: new[] { "database", "sql" });
 
+        // Database migration status check
+        healthChecks.AddCheck("database-migrations", () =>
+        {
+            try
+            {
+                using var scope = services.BuildServiceProvider().CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
+                var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+                
+                if (pendingMigrations.Any())
+                {
+                    return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Degraded(
+                        $"⚠️ {pendingMigrations.Count} pending migration(s): {string.Join(", ", pendingMigrations)}");
+                }
+                
+                return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Healthy("✅ All migrations applied");
+            }
+            catch (Exception ex)
+            {
+                return Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult.Unhealthy(
+                    "❌ Cannot check migrations", ex);
+            }
+        }, tags: new[] { "database", "migrations" });
+
         // Qdrant health check
         //healthChecks.AddCheck<QdrantHealthCheck>(
         //    "qdrant",
@@ -229,6 +305,20 @@ public static class ServiceCollectionExtensions
                 return check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext()).Result;
             },
             tags: new[] { "ai", "azureopenai" });
+
+        // Azure Service Bus health check (if configured for production)
+        var serviceBusConnectionString = configuration["AzureServiceBus:ConnectionString"];
+        if (!string.IsNullOrEmpty(serviceBusConnectionString))
+        {
+            var queueName = configuration["AzureServiceBus:MetaWebhookQueueName"]
+                ?? configuration["AzureServiceBus:QueueName"]
+                ?? "meta-webhooks";
+            healthChecks.AddAzureServiceBusQueue(
+                serviceBusConnectionString,
+                queueName,
+                name: "servicebus-meta-webhooks",
+                tags: new[] { "messaging", "servicebus", "meta" });
+        }
 
         return services;
     }
@@ -259,12 +349,6 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var jwtConfig = configuration.GetSection(JwtOptions.SectionName)
-            .Get<JwtOptions>() 
-            ?? throw new InvalidOperationException("JWT configuration is missing");
-        
-        var key = System.Text.Encoding.UTF8.GetBytes(jwtConfig.Secret);
-        
         services.AddAuthentication(options =>
         {
             // Default scheme for web/API
@@ -273,23 +357,13 @@ public static class ServiceCollectionExtensions
         })
         .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
         {
-            options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-            {
-                ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(key),
-                ValidateIssuer = true,
-                ValidIssuer = jwtConfig.Issuer,
-                ValidateAudience = true,
-                ValidAudience = jwtConfig.Audience,
-                ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
-            };
+            // Configured via options below (deferred to allow test overrides)
         })
         .AddCookie(CookieAuthenticationDefaults.AuthenticationScheme, options =>
         {
             options.LoginPath = "/admin-login.html";
             options.LogoutPath = "/api/auth/logout";
-            options.ExpireTimeSpan = TimeSpan.FromMinutes(jwtConfig.ExpirationMinutes);
+            // ExpireTimeSpan configured via options below
             options.SlidingExpiration = true;
             options.Cookie.HttpOnly = true;
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
@@ -317,6 +391,40 @@ public static class ServiceCollectionExtensions
                 return CookieAuthenticationDefaults.AuthenticationScheme;
             };
         });
+
+        // Configure JWT/Cookie options lazily using JwtOptions.
+        // This avoids capturing an empty Jwt:Secret too early (important for tests and dynamic configuration).
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<Microsoft.Extensions.Options.IOptionsMonitor<JwtOptions>>((options, jwtOptionsMonitor) =>
+            {
+                var jwt = jwtOptionsMonitor.CurrentValue;
+
+                if (string.IsNullOrWhiteSpace(jwt.Secret))
+                {
+                    throw new InvalidOperationException("JWT configuration is missing Jwt:Secret");
+                }
+
+                var keyBytes = System.Text.Encoding.UTF8.GetBytes(jwt.Secret);
+
+                options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyBytes),
+                    ValidateIssuer = true,
+                    ValidIssuer = jwt.Issuer,
+                    ValidateAudience = true,
+                    ValidAudience = jwt.Audience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.Zero
+                };
+            });
+
+        services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+            .Configure<Microsoft.Extensions.Options.IOptionsMonitor<JwtOptions>>((options, jwtOptionsMonitor) =>
+            {
+                var jwt = jwtOptionsMonitor.CurrentValue;
+                options.ExpireTimeSpan = TimeSpan.FromMinutes(jwt.ExpirationMinutes);
+            });
         
         // Add authorization policies
         services.AddAuthorization(options =>
