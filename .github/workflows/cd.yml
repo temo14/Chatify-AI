@@ -17,103 +17,169 @@ on:
           - production
 
 env:
-  DOTNET_VERSION: '10.0.x'
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  # Image name in ACR. Keep this stable; tags change per deployment.
+  IMAGE_NAME: chatify-ai
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-      
+
+    # Uses repository-level secrets (or environment secrets if you prefer):
+    # - AZURE_CREDENTIALS (required): service principal JSON for azure/login
+    # - AZURE_ACR_NAME (required): e.g. chatifyregistry (no .azurecr.io)
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-        tags: |
-          type=ref,event=branch
-          type=ref,event=pr
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
-          type=sha,prefix={{branch}}-
-          
-    - name: Build and push Docker image
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve ACR login server
+        id: acr
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACR_NAME="${{ secrets.AZURE_ACR_NAME }}"
+          if [ -z "$ACR_NAME" ]; then
+            echo "AZURE_ACR_NAME secret is required" >&2
+            exit 1
+          fi
+          LOGIN_SERVER=$(az acr show -n "$ACR_NAME" --query loginServer -o tsv)
+          echo "login_server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+
+      - name: ACR docker login
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr login --name "${{ secrets.AZURE_ACR_NAME }}"
+
+      - name: Compute image tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push image to ACR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.acr.outputs.login_server }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+    outputs:
+      acr_login_server: ${{ steps.acr.outputs.login_server }}
+      image_tag: ${{ steps.tag.outputs.tag }}
+
   deploy-staging:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' || github.event.inputs.environment == 'staging'
     environment: staging
-    
+
+    # Uses environment secrets (recommended) or repo secrets:
+    # - AZURE_CREDENTIALS (required)
+    # - AZURE_RESOURCE_GROUP (required)
+    # - AZURE_CONTAINERAPP_NAME (required)
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to staging
-      run: |
-        echo "Deploying to staging environment..."
-        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:master"
-        # Add your deployment commands here
-        # Examples:
-        # - Azure Container Apps: az containerapp update ...
-        # - Azure App Service: az webapp config container set ...
-        # - Kubernetes: kubectl set image deployment/chatify-api ...
-        # - Docker Swarm: docker service update ...
-        
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy (Container Apps)
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+          APP="${{ secrets.AZURE_CONTAINERAPP_NAME }}"
+          if [ -z "$RG" ] || [ -z "$APP" ]; then
+            echo "AZURE_RESOURCE_GROUP and AZURE_CONTAINERAPP_NAME secrets are required" >&2
+            exit 1
+          fi
+
+          IMAGE="${{ needs.build-and-push.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
+          echo "Deploying image: $IMAGE"
+          az containerapp update -n "$APP" -g "$RG" --image "$IMAGE"
+
+          FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://${{ steps.deploy.outputs.fqdn }}/health"
+          echo "Checking: $URL"
+          for i in {1..20}; do
+            if curl -fsS "$URL" >/dev/null; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed" >&2
+          exit 1
+
   deploy-production:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.environment == 'production'
     environment: production
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Deploy to production
-      run: |
-        echo "Deploying to production environment..."
-        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
-        # Add your production deployment commands here
-        
-  health-check:
-    needs: [deploy-staging]
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master'
-    
-    steps:
-    - name: Wait for deployment
-      run: sleep 30
-      
-    - name: Check health endpoint
-      run: |
-        # Replace with your actual staging URL
-        STAGING_URL="${{ secrets.STAGING_URL || 'http://staging.example.com' }}"
-        curl -f "$STAGING_URL/health" || exit 1
-        echo "Health check passed!"
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy (Container Apps)
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
+          APP="${{ secrets.AZURE_CONTAINERAPP_NAME }}"
+          if [ -z "$RG" ] || [ -z "$APP" ]; then
+            echo "AZURE_RESOURCE_GROUP and AZURE_CONTAINERAPP_NAME secrets are required" >&2
+            exit 1
+          fi
+
+          IMAGE="${{ needs.build-and-push.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}"
+          echo "Deploying image: $IMAGE"
+          az containerapp update -n "$APP" -g "$RG" --image "$IMAGE"
+
+          FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Health check
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://${{ steps.deploy.outputs.fqdn }}/health"
+          echo "Checking: $URL"
+          for i in {1..30}; do
+            if curl -fsS "$URL" >/dev/null; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Health check failed" >&2
+          exit 1

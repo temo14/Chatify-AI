@@ -3,17 +3,6 @@ using ChatAI.Api.Extensions;
 using Serilog;
 using Serilog.Events;
 
-// Bootstrap logger: Ensures logging works from the very start of application lifecycle
-// This captures startup errors before full configuration is loaded (fail-fast principle)
-Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
-    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-    .MinimumLevel.Override("System", LogEventLevel.Warning)
-    .Enrich.FromLogContext()
-    .WriteTo.Console(
-        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-    .CreateLogger();
-
 try
 {
     Log.Information("Starting ChatAI application...");
@@ -54,7 +43,7 @@ try
     });
 
     // Apply database migrations and seed initial data
-    await app.UseDatabaseMigrationsAsync(app.Environment);
+    //await app.UseDatabaseMigrationsAsync(app.Environment);
 
     // Global exception handler - must be first in pipeline
     app.UseGlobalExceptionHandler();

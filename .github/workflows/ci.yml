@@ -40,15 +40,6 @@ jobs:
         name: Test Results
         path: '**/test-results.trx'
         reporter: dotnet-trx
-        
-    - name: Publish build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts
-        path: |
-          **/bin/Release/
-          **/obj/Release/
-        retention-days: 1
 
   code-quality:
     runs-on: ubuntu-latest
@@ -68,10 +59,6 @@ jobs:
       
     - name: Check code formatting
       run: dotnet format "Chatify AI.sln" --verify-no-changes --verbosity diagnostic
-      continue-on-error: true
-      
-    - name: Run security scan
-      uses: securego/gosec@master
       continue-on-error: true
 
   docker:
@@ -94,8 +81,6 @@ jobs:
         tags: chatify-ai:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        
-    - name: Test Docker image
-      run: |
-        docker images
-        docker run --rm chatify-ai:${{ github.sha }} --version || true
+
+    - name: List Docker images
+      run: docker images
