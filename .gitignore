@@ -13,6 +13,9 @@
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 
+graphify-out
+.vscode
+
 # Mono auto generated files
 mono_crash.*
 
@@ -380,3 +383,7 @@ docker-compose.override.yml
 
 # Temporary appsettings with real secrets (if created)
 **/appsettings.*.local.json
+
+# Encryption key files
+ChatAI.Api/keys/
+*.xml.bak

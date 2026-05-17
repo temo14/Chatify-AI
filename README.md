@@ -1,383 +1,131 @@
 # Chatify AI
 
-An intelligent AI agent built with .NET 10, Azure OpenAI, and Clean Architecture principles.
+A multi-tenant AI chat platform on .NET 10 that connects Facebook, Instagram, and WhatsApp pages to GPT-4o agents — each business gets an isolated tenant, knowledge base, and conversation history.
 
-## Features
+## What it does
 
-- 🤖 **AI Agent with Tool Calling** - Autonomous decision-making with function execution
-- 📚 **RAG (Retrieval-Augmented Generation)** - Semantic vector search with Qdrant
-- 💾 **Persistent Chat Sessions** - Database-backed conversation history
-- 🔧 **Extensible Tool System** - Easy to add custom tools/functions
-- 🏗️ **Clean Architecture** - Domain-driven design with clear separation of concerns
-- 🐳 **Docker Ready** - Full containerization with SQL Server and Qdrant
-- 🔍 **Production Vector Search** - Semantic similarity with cosine distance
+Any business can sign up as a tenant, connect their social media pages through Meta OAuth, and have an AI agent auto-responding to inbound messages on those channels. Messages arrive via a shared Meta webhook endpoint, get routed to the correct tenant by page/account ID, pass through a RAG pipeline that retrieves relevant knowledge, and generate a streaming GPT-4o response — all within a single deployment serving unlimited tenants.
 
 ## Architecture
 
-**Clean Architecture with CQRS, Validation, and AI Orchestration**
-
 ```
-ChatAI.Api              - REST API endpoints & SSE streaming
-ChatAI.Application      - CQRS commands/queries, validation, business logic
-ChatAI.Domain           - Core entities & domain logic
-ChatAI.Infrastructure   - Azure OpenAI, Qdrant, SQL Server, tools
+ChatAI.Api              — REST endpoints, SSE streaming, Meta webhook receiver
+ChatAI.Application      — CQRS (MediatR), FluentValidation, business logic
+ChatAI.Domain           — Entities, interfaces (no framework dependencies)
+ChatAI.Infrastructure   — Azure OpenAI, Qdrant, SQL Server, Meta Graph API client
 ```
 
-**📖 Comprehensive Documentation:**
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture and design patterns
-- [docs/IMPLEMENTATION_COMPLETE.md](docs/IMPLEMENTATION_COMPLETE.md) - Feature implementation guide
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment instructions
+## Key Technical Features
 
-**Design Patterns:**
-- ✅ CQRS (MediatR) - Command/Query separation
-- ✅ FluentValidation - Input/output validation with security checks
-- ✅ Streaming (SSE) - Real-time token-by-token responses
-- ✅ Semantic Kernel - AI orchestration with plugins (optional)
-- ✅ Repository Pattern - Data access abstraction
-- ✅ Dependency Injection - Inversion of control
+### Multi-Tenancy
+
+One deployment serves multiple isolated businesses. Tenant resolution runs in priority order on every request:
+
+1. **JWT claim** (`tenant_id`) — authenticated admin/user requests
+2. **Custom domain** — `acmecorp.com` maps to a tenant record
+3. **Subdomain** — `acmecorp.yourplatform.com`
+4. **`X-Tenant-Slug` header** — for headless API clients
+
+Each tenant has a plan tier (Free / Basic / Pro / Enterprise), monthly message and document quotas tracked in real time, and data isolation enforced at the repository layer. The platform-admin role can create, update, and soft-delete tenants; tenant-admin users can configure their own chat settings and channel connections.
+
+### Meta Webhook Integration
+
+A single endpoint (`/api/webhooks/meta`) receives events for all tenants from Messenger, Instagram DMs, and WhatsApp Cloud API. Each request is:
+
+1. **Signature-verified** — HMAC-SHA256 over the raw body against `X-Hub-Signature-256` before any other work
+2. **Channel-routed** — the `object` field in the payload (`page` / `instagram` / `whatsapp_business_account`) determines channel type; `page_id`, `instagram_account_id`, or `phone_number_id` maps to a specific tenant connection
+3. **Queued** — enqueued for async processing so Meta's delivery gets a fast 200 OK
+
+**OAuth flow:** tenant admins initiate from the dashboard → Meta redirects back with an authorization code → the frontend calls an authenticated `/oauth/complete` endpoint to exchange the code. The anonymous callback endpoint intentionally only redirects to the UI and never touches the token, preventing CSRF and token-hijacking attacks. Access tokens are stored AES-encrypted with versioned keys.
+
+### AI Pipeline
+
+- **RAG** — user messages trigger semantic search in Qdrant (cosine similarity, 1536-d embeddings via `text-embedding-3-small`); top matches are injected as context before the GPT-4o call
+- **Tool calling** — the agent can invoke registered tools autonomously (weather, search, custom functions) before generating a response
+- **SSE streaming** — responses stream token-by-token via Server-Sent Events, with nginx buffering disabled via `X-Accel-Buffering: no`
 
 ## Tech Stack
 
-- **.NET 10**: Latest framework with native AOT support
-- **Azure OpenAI**: GPT-4o for chat, text-embedding-3-small for embeddings
-- **Qdrant**: Production vector database for semantic search
-- **SQL Server 2022**: Relational storage for metadata and sessions
-- **Docker**: Containerized deployment with multi-service orchestration
+| Component | Technology |
+|-----------|------------|
+| Runtime | .NET 10 |
+| AI | Azure OpenAI — GPT-4o + text-embedding-3-small |
+| Vector DB | Qdrant |
+| Relational DB | SQL Server 2022 |
+| Channels | Meta Graph API (Messenger, Instagram, WhatsApp) |
+| Deployment | Azure Container Apps |
+| CI/CD | GitHub Actions → Azure Container Registry → Container Apps |
 
-## Configuration
+## Use Cases
 
-### Best Practices
+**Customer support automation** — A retailer connects their Facebook page. When a customer sends "Where's my order?", the webhook fires, the AI retrieves the shipping policy from the tenant's knowledge base, and replies in seconds without human intervention.
 
-**🔒 Security First:**
-- Never commit secrets to source control
-- Use environment variables for production secrets
-- Use `appsettings.Development.json` for local development secrets
+**Multi-location businesses** — Each franchise location is a separate tenant with its own knowledge base and social pages. The platform owner manages all tenants from a single admin dashboard.
 
-**📁 Configuration Hierarchy:**
-1. `appsettings.json` - Base configuration (no secrets)
-2. `appsettings.{Environment}.json` - Environment-specific overrides
-3. Environment variables - Production secrets (highest priority)
-4. User secrets (local development only)
+**SaaS resellers** — A digital agency onboards client businesses as tenants, connects their Instagram accounts via OAuth, and delivers a white-labeled AI agent — all from one deployment with per-tenant billing quotas.
 
-### Local Development Setup
-
-1. **Copy development settings:**
-   ```bash
-   cp ChatAI.Api/appsettings.Development.json.example ChatAI.Api/appsettings.Development.json
-   ```
-
-2. **Edit `appsettings.Development.json`** with your local secrets:
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Server=localhost;Database=ChatifyAI_Dev;Integrated Security=true;"
-     },
-     "AzureOpenAI": {
-       "Endpoint": "https://your-resource.openai.azure.com/",
-       "ApiKey": "your-api-key-here"
-     },
-     "Jwt": {
-       "Secret": "dev-jwt-secret-key-for-development-only"
-     }
-   }
-   ```
-
-### Production Setup
-
-**Use environment variables for all secrets:**
-```bash
-# Database
-export CONNECTIONSTRINGS__DEFAULTCONNECTION="Server=prod-server;Database=ChatifyAI;User Id=sa;Password=StrongPass123;"
-
-# Azure OpenAI
-export AZUREOPENAI__ENDPOINT="https://your-prod-resource.openai.azure.com/"
-export AZUREOPENAI__APIKEY="your-production-api-key"
-
-# JWT
-export JWT__SECRET="your-very-strong-production-jwt-secret-key"
-
-# Email (optional)
-export EMAIL__SMTPHOST="smtp.gmail.com"
-export EMAIL__USERNAME="your-email@gmail.com"
-export EMAIL__PASSWORD="your-app-password"
-```
-
-**For Azure App Service:**
-Set these in Application Settings (Configuration > Application settings).
-
-## Quick Start with Docker
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/temo14/Chatify-AI.git
-   cd Chatify-AI
-   ```
-
-2. **Configure Azure OpenAI**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Azure OpenAI credentials
-   ```
-
-3. **Run with Docker Compose**
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Apply database migrations**
-   ```bash
-   docker exec chatify-api dotnet ef database update --project /app
-   ```
-
-5. **Access the API**
-   - API: http://localhost:5000
-   - Swagger UI: http://localhost:5000/swagger
-   - Qdrant Dashboard: http://localhost:6333/dashboard
-
-## Manual Setup (without Docker)
+## Setup
 
 ### Prerequisites
+
 - .NET 10 SDK
-- SQL Server (or SQL Server Express)
-- Azure OpenAI API access
-- Qdrant (or use Docker for just Qdrant: `docker run -p 6333:6333 qdrant/qdrant`)
+- Docker (SQL Server + Qdrant)
+- Azure OpenAI resource with `gpt-4o` and `text-embedding-3-small` deployments
+- Meta App with Messenger/Instagram/WhatsApp products and a configured webhook
 
-### Steps
-
-1. **Restore packages**
-   ```bash
-   dotnet restore
-   ```
-
-2. **Configure secrets** (see Configuration section above)
-   ```bash
-   # Edit ChatAI.Api/appsettings.Development.json with your local secrets
-   # OR use environment variables
-   ```
-
-   Or edit `ChatAI.Api/appsettings.Development.json` directly (development only)
-
-3. **Start Qdrant** (if not using Docker)
-   ```bash
-   docker run -p 6333:6333 -p 6334:6334 -v $(pwd)/qdrant-data:/qdrant/storage qdrant/qdrant:latest
-   ```
-
-4. **Apply migrations**
-   ```bash
-   cd ChatAI.Api
-   dotnet ef database update --project ../ChatAI.Infrastructure/ChatAI.Infrastructure.csproj
-   ```
-
-5. **Run the application**
-   ```bash
-   dotnet run --project ChatAI.Api
-   ```
-
-The application will automatically:
-- Initialize the Qdrant collection (`chatai_knowledge`)
-- Seed the database with test users and knowledge documents
-- Generate embeddings for knowledge documents on first add/update
-
-## Authentication
-
-All API requests require an `X-API-Key` header for authentication.
-
-### Test Users
-
-The database is seeded with test users and API keys:
-
-| User ID | API Key | Description |
-|---------|---------|-------------|
-| demo-user | demo-key-12345 | Default demo user |
-| test-user | test-key-67890 | Testing account |
-| admin-user | admin-key-abcdef | Admin account |
-
-## Seeded Data
-
-The application automatically seeds the database with:
-
-### Knowledge Base (5 Documents)
-1. **Return Policy** - 30-day return policy details
-2. **Warranty Information** - 1-year limited warranty coverage
-3. **Shipping Policy** - Domestic and international shipping info
-4. **Customer Support FAQ** - Common support questions
-5. **Account Management** - User account information
-
-### Demo Conversation
-- Pre-populated conversation for `demo-user`
-- 4 messages demonstrating chat history persistence
-- Tests RAG retrieval and session management
-
-## API Usage
-
-### Send a Chat Message
+### Quick Start (Docker)
 
 ```bash
-# PowerShell
-curl -X POST http://localhost:5000/api/chat/send `
-  -H "X-API-Key: demo-key-12345" `
-  -H "Content-Type: application/json" `
-  -d '{\"userId\":\"demo-user\",\"message\":\"What is your return policy?\",\"useTools\":true}'
-
-# Bash
-curl -X POST http://localhost:5000/api/chat/send \
-  -H "X-API-Key: demo-key-12345" \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"demo-user","message":"What is your return policy?","useTools":true}'
+git clone https://github.com/temo14/Chatify-AI.git
+cd Chatify-AI
+cp .env.example .env           # fill in credentials
+docker-compose up -d
+docker exec chatify-api dotnet ef database update --project /app
+# Swagger: http://localhost:5000/swagger
+# Qdrant:  http://localhost:6333/dashboard
 ```
 
-### Quick Test
+### Required Environment Variables
 
-```powershell
-# Run the provided test script
-.\test-api.ps1
+```bash
+# Azure OpenAI
+AZUREOPENAI__ENDPOINT=https://your-resource.openai.azure.com/
+AZUREOPENAI__APIKEY=...
+
+# Meta
+Meta__AppSecret=...
+Meta__OAuth__ClientId=...
+Meta__OAuth__ClientSecret=...
+Meta__OAuth__RedirectUri=https://your-domain.com/api/tenant/meta/oauth/callback
+Meta__Webhook__VerifyToken=...
+
+# Database & JWT
+CONNECTIONSTRINGS__DEFAULTCONNECTION=Server=...;Database=ChatifyAI;...
+JWT__SECRET=...
 ```
 
-### Response Example
+## CI/CD
 
-```json
-{
-  "reply": "According to our return policy, we offer a 30-day return window...",
-  "sessionId": "abc-123-def",
-  "toolCalled": false,
-  "timestamp": "2025-12-04T10:30:00Z"
-}
-```
+Every push runs three parallel GitHub Actions jobs: **build** (restore → compile → test → publish TRX results), **code-quality** (`dotnet format` verification), and **docker** (image build with GHA layer cache).
 
-### Tool Calling Example
-
-```json
-{
-  "reply": "The current weather in London is 15°C and cloudy.",
-  "sessionId": "abc-123-def",
-  "toolCalled": true,
-  "toolCall": {
-    "name": "get_weather",
-    "arguments": "{\"city\":\"London\",\"unit\":\"celsius\"}",
-    "result": "15°C, Cloudy"
-  },
-  "timestamp": "2025-12-04T10:30:00Z"
-}
-```
-
-### Documentation
-
-- **API Examples**: See `API_EXAMPLES.http` for comprehensive request examples
-- **Testing Guide**: See `TESTING_GUIDE.md` for testing scenarios and validation
-
-## Adding Knowledge to RAG
-
-### Automatic Embedding Generation
-
-When you add a document, embeddings are automatically generated and stored in Qdrant:
-
-```sql
-INSERT INTO KnowledgeDocuments (Id, Title, Content, Category, IsActive, CreatedAt)
-VALUES (
-  NEWID(),
-  'Company Refund Policy',
-  'Refunds are allowed within 30 days of purchase...',
-  'policy',
-  1,
-  GETUTCDATE()
-);
-```
-
-The application will:
-1. Generate 1536-dimensional embedding via Azure OpenAI
-2. Store embedding in Qdrant with metadata
-3. Enable semantic search for this document
-
-### Semantic Search
-
-The RAG system uses **semantic similarity** instead of keyword matching:
-
-**Example Query**: "How do I get my money back?"  
-**Matches**: "Return Policy", "Refund Process", "Reimbursement Guidelines"  
-**How**: Cosine similarity between query embedding and document embeddings (70% threshold)
-
-**Fallback**: If no semantic matches found, falls back to traditional SQL text search.
+On merge to `master`, the CD pipeline logs into Azure, pushes the image to ACR, updates the Container App, then polls `/health` until the new revision passes. Production deploys are gated on `v*` tags or a manual workflow dispatch with environment selection.
 
 ## Project Structure
 
 ```
-├── ChatAI.Api/
-│   ├── Controllers/        # API endpoints
-│   ├── DTOs/              # Data transfer objects
-│   └── Program.cs         # DI configuration
-├── ChatAI.Application/
-│   ├── Configuration/     # Options classes
-│   ├── Interfaces/        # Service contracts
-│   ├── Models/           # Request/Response models
-│   └── Services/         # Business logic
-├── ChatAI.Domain/
-│   ├── Entities/         # Domain models
-│   └── Enums/           # Enumerations
-├── ChatAI.Infrastructure/
-│   ├── Data/             # DbContext & migrations
-│   ├── Repositories/     # Data access
-│   ├── Services/         # QdrantVectorService
-│   ├── Tools/           # Tool executor
-│   └── AzureService.cs  # Azure OpenAI client
-└── docker-compose.yml
+ChatAI.Api/
+  Controllers/     — REST endpoints + Meta webhook receiver
+  Middleware/      — Tenant resolution (JWT → domain → subdomain → header)
+ChatAI.Application/
+  Features/        — CQRS commands/queries, one folder per feature slice
+ChatAI.Domain/
+  Entities/        — Tenant, MetaChannelConnection, KnowledgeDocument, ChatSession
+ChatAI.Infrastructure/
+  Services/Meta/   — Webhook signature validator, OAuth exchange, message sender
+  Services/        — Qdrant vector service, Azure OpenAI client
+  Data/            — EF Core DbContext + migrations
 ```
-
-## Environment Variables
-
-### Core Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | Required |
-| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key | Required |
-| `AZURE_OPENAI_CHAT_DEPLOYMENT` | Chat model deployment name | gpt-4o |
-| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Embedding model name | text-embedding-3-small |
-| `ConnectionStrings__DefaultConnection` | Database connection string | See docker-compose.yml |
-
-### Vector Search Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `QDRANT__ENDPOINT` | Qdrant connection URL | http://localhost:6333 |
-| `QDRANT__COLLECTIONNAME` | Vector collection name | chatai_knowledge |
-| `QDRANT__VECTORSIZE` | Embedding dimensions | 1536 |
-
-### Security Configuration
-
-See `SETUP_SECRETS.md` for detailed configuration instructions.
-
-## Troubleshooting
-
-### Qdrant Connection Issues
-
-**Error**: "Unable to connect to Qdrant"  
-**Solution**: Verify Qdrant is running:
-```bash
-curl http://localhost:6333/
-# Should return: {"title":"qdrant - vector search engine","version":"..."}
-```
-
-### Embedding Generation Fails
-
-**Error**: "Failed to generate embeddings"  
-**Solution**: Check Azure OpenAI credentials and deployment name:
-```bash
-dotnet user-secrets list --project ChatAI.Api
-```
-
-### No Semantic Search Results
-
-**Cause**: Query too specific or threshold too high  
-**Solution**: Adjust similarity threshold in `KnowledgeRepository.cs` (default: 0.7)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT

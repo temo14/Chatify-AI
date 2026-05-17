@@ -414,8 +414,7 @@ public class CompleteOAuthCommandHandler : IRequestHandler<CompleteOAuthCommand,
             throw new ValidationException("No Facebook Pages found. You must be an admin of at least one page.");
         }
         
-        // For now, return the first page
-        // TODO: In future, allow user to select which page to connect
+        // Not implemented: multi-page selection — connects first available page
         var selectedPage = pages.First();
         
         _logger.LogInformation(
@@ -511,8 +510,7 @@ public class CompleteOAuthCommandHandler : IRequestHandler<CompleteOAuthCommand,
                 "Please verify your WhatsApp Business phone number in Meta Business Manager before connecting.");
         }
         
-        // Step 3: Select phone number (for now, use the first verified one)
-        // TODO: In future, allow user to select if multiple verified phones exist
+        // Not implemented: multi-phone selection — connects first verified phone
         var selectedPhone = verifiedPhones.First();
         
         _logger.LogInformation(

@@ -11,10 +11,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 /// <summary>
-/// Integration tests for Meta OAuth flow
-/// NOTE: Requires CustomWebApplicationFactory setup (not yet implemented)
-/// TODO: Create ChatAI.Tests/Setup/CustomWebApplicationFactory.cs with WebApplicationFactory<Program>
-/// TODO: Add AuthenticateAsTestTenantAsync helper method
+/// Integration tests for Meta OAuth flow.
+/// Not implemented: requires CustomWebApplicationFactory with WebApplicationFactory&lt;Program&gt;
+/// and an AuthenticateAsTestTenantAsync helper. All tests below are scaffolded but commented out.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Feature", "MetaOAuth")]
